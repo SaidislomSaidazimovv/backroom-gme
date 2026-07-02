@@ -1,4 +1,4 @@
-export default function PlaySec() {
+export default function PlaySec({ onEnter }) {
   return (
     <section id="playsec">
       <div className="eyebrow rv">FILE 06 — SIMULATION</div>
@@ -7,7 +7,7 @@ export default function PlaySec() {
         the dark between you and it, and your flashlight runs on a battery from 1996. Follow the whine,
         keep the beam on whatever moves, and do not stop walking. If you want to try it yourself —
         <em>press play.</em></p>
-      <button id="startGame" className="rv d3">► PLAY — ENTER THE MAZE</button>
+      <button id="startGame" className="rv d3" onClick={onEnter}>► PLAY — ENTER THE MAZE</button>
       <div className="warn rv d3">WASD MOVE · MOUSE LOOK · SHIFT RUN · F TORCH · LIGHT FREEZES IT</div>
     </section>
   );
