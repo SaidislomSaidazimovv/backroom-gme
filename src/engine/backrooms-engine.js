@@ -448,19 +448,57 @@ exitLight.position.set(0, 1.6, 0.5); exitG.add(exitLight);
 exitG.traverse(o=>{ if(o.isMesh && o.material === jambMat) o.castShadow = true; });
 exitG.visible = false; scene.add(exitG);
 
-/* --- the entity --- */
+/* --- the entity: a "Smiler" — a tall, gaunt, near-black form. In the dark you
+   see only its glowing grin and eyes; the torch reveals the body (and freezes
+   it). Its local +z faces the player (see the rotation in updateGame). --- */
 const entG = new THREE.Group();
-const entMat = new THREE.MeshLambertMaterial({color:0x0b0a09});
-const entBody = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.3, 2.0, 6), entMat);
-entBody.position.y = 1.0; entG.add(entBody);
-const entHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 5), entMat);
-entHead.position.y = 2.12; entG.add(entHead);
-[[-1],[1]].forEach(([s])=>{
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.03, 1.25, 5), entMat);
-  arm.position.set(s*0.3, 1.25, 0); arm.rotation.z = s*0.22; entG.add(arm);
+const entDark = new THREE.MeshStandardMaterial({ color: 0x060606, roughness: 1, metalness: 0 });
+[[-0.11], [0.12]].forEach(([lx], i) => {                                   // long legs
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.045, 1.3, 6), entDark);
+  leg.position.set(lx, 0.64, 0); leg.rotation.x = i ? 0.05 : -0.04; entG.add(leg);
 });
-entG.scale.setScalar(1.18);
-entG.traverse(o=>{ if(o.isMesh) o.castShadow = true; });
+const entPelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.14, 0.34, 7), entDark);
+entPelvis.position.y = 1.34; entG.add(entPelvis);
+const entTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.21, 1.05, 7), entDark);
+entTorso.position.set(0, 1.98, 0.03); entTorso.rotation.x = -0.06; entG.add(entTorso);      // slight hunch
+const entShldr = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.11, 0.16), entDark);
+entShldr.position.set(0, 2.44, 0.02); entG.add(entShldr);
+[[-1], [1]].forEach(([s]) => {                                             // unnaturally long arms
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.028, 1.55, 6), entDark);
+  arm.position.set(s * 0.26, 1.68, 0.05); arm.rotation.z = s * 0.05; entG.add(arm);
+});
+const entNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.16, 6), entDark);
+entNeck.position.y = 2.54; entG.add(entNeck);
+const entHead = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), entDark);
+entHead.scale.set(1, 1.15, 0.92); entHead.position.y = 2.7; entG.add(entHead);
+// the grin — a canvas "skin"; jagged teeth crescent that glows in the black
+const smilerGrin = tex((g, w, h) => {
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = "#eff0e2";
+  g.beginPath();
+  g.moveTo(w * 0.08, h * 0.32);
+  g.quadraticCurveTo(w * 0.5, h * 0.24, w * 0.92, h * 0.32);
+  g.quadraticCurveTo(w * 0.5, h * 0.98, w * 0.08, h * 0.32);
+  g.closePath(); g.fill();
+  g.strokeStyle = "rgba(5,5,4,0.92)"; g.lineWidth = Math.max(2, w * 0.012);
+  const n = 15;
+  for (let i = 1; i < n; i++) { const x = w * (0.1 + 0.8 * i / n); g.beginPath(); g.moveTo(x, h * 0.28); g.lineTo(x, h * 0.95); g.stroke(); }
+  g.fillStyle = "rgba(5,5,4,0.92)";
+  for (let i = 0; i < n; i++) {
+    const x0 = w * (0.1 + 0.8 * i / n), x1 = w * (0.1 + 0.8 * (i + 1) / n), mid = (x0 + x1) / 2;
+    g.beginPath(); g.moveTo(x0, h * 0.9); g.lineTo(x1, h * 0.9); g.lineTo(mid, h * 0.66); g.closePath(); g.fill();
+  }
+}, 256, 128);
+const entGrinMat = new THREE.MeshBasicMaterial({ map: smilerGrin, transparent: true, side: THREE.DoubleSide });
+const entGrin = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.16), entGrinMat);
+entGrin.position.set(0, 2.63, 0.155); entGrin.userData.glow = true; entG.add(entGrin);
+const entEyeMat = new THREE.MeshBasicMaterial({ color: 0xf7f4e2, transparent: true });
+[[-0.07], [0.07]].forEach(([ex]) => {
+  const eye = new THREE.Mesh(new THREE.CircleGeometry(0.022, 12), entEyeMat);
+  eye.position.set(ex, 2.78, 0.16); eye.userData.glow = true; entG.add(eye);
+});
+entG.scale.setScalar(1.05);
+entG.traverse(o => { if (o.isMesh) o.castShadow = !o.userData.glow; });
 entG.visible = false; scene.add(entG);
 
 /* --- battery pickups --- */
@@ -685,6 +723,9 @@ function updateGame(dt, t){
   }
   entG.position.set(entW.x - px, lit ? Math.sin(t*40)*0.008 : 0, entW.z - pz);
   entG.rotation.y = Math.atan2(px - entW.x, pz - entW.z);
+  const glow = 0.6 + 0.4 * Math.abs(Math.sin(t * 3)) + (ed < 8 ? 0.2 : 0);   // grin/eyes flicker, steadier up close
+  entGrinMat.opacity = Math.min(1, glow);
+  entEyeMat.opacity = Math.min(1, glow * (0.8 + Math.abs(Math.sin(t * 11)) * 0.2));
   if(ed < 1.3){ endGame("caught"); return; }
 
   /* dread + guidance audio */
@@ -736,7 +777,7 @@ function applyGraphics(){
   torch.castShadow = sh;
   for(const p of pillars){ p.castShadow = p.receiveShadow = sh; }
   floor.receiveShadow = ceil.receiveShadow = sh;
-  entG.traverse(o=>{ if(o.isMesh) o.castShadow = sh; });
+  entG.traverse(o=>{ if(o.isMesh) o.castShadow = sh && !o.userData.glow; });
   exitG.traverse(o=>{ if(o.isMesh && o.material === jambMat) o.castShadow = sh; });
   if(torch.shadow.mapSize.width !== q.shadowMap){
     torch.shadow.mapSize.set(q.shadowMap, q.shadowMap);
