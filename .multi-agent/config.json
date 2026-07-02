@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "project_name": "Backroom-game",
+  "scale_mode": "squad",
+  "terminal_count": 3,
+  "has_planner": true,
+  "lock_ttl_minutes": 15,
+  "stale_lock_policy": "warn",
+  "git_variant": "B",
+  "integration_branch": "dev",
+  "prod_branch": "main",
+  "approval_gate_enabled": true,
+  "build_command": "open backrooms.html in a browser and click through the game",
+  "test_command": "open backrooms.html in a browser and click through the game",
+  "commit_format": "conventional",
+  "configured_at": "2026-07-02T09:07:22Z",
+  "configured_via": "preset:squad"
+}
