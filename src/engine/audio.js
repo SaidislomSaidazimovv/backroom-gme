@@ -1,7 +1,7 @@
 /**
  * All Web Audio for the piece, behind one factory. Nothing here touches THREE;
  * the simulation calls these methods and reads the exposed nodes / flags via
- * getters.
+ * getters. Everything routes through a master gain so `setVolume` can scale it.
  *
  *  - hum:            ambient 60 Hz fluorescent drone (HUM button / loader gate)
  *  - stepSfx:        footstep one-shot (only while the hum is on)
@@ -11,16 +11,18 @@
  *  - winSfx:         escape chord
  */
 export function createAudio() {
-  let AC = null, humGain = null, humOn = false;
+  let AC = null, master = null, humGain = null, humOn = false;
+  let _volume = 1;
   let stepBuf = null;
   let gAudioReady = false, whineGain = null, whinePan = null, droneGain = null;
   const soundBtn = document.getElementById("soundBtn");
 
   function buildHum(){
     AC = new (window.AudioContext||window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = _volume; master.connect(AC.destination);
     humGain = AC.createGain(); humGain.gain.value = 0;
     const lp = AC.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=900;
-    humGain.connect(lp).connect(AC.destination);
+    humGain.connect(lp).connect(master);
     [[60,.5],[120,.28],[180,.1]].forEach(([f,g])=>{
       const o = AC.createOscillator(); o.type="sawtooth"; o.frequency.value=f;
       const og = AC.createGain(); og.gain.value=g;
@@ -42,6 +44,10 @@ export function createAudio() {
     soundBtn.setAttribute("aria-pressed", on);
   }
   soundBtn.addEventListener("click", ()=> setHum(!humOn));
+  function setVolume(v){
+    _volume = Math.max(0, Math.min(1, v));
+    if(master) master.gain.setTargetAtTime(_volume, AC.currentTime, 0.05);
+  }
   function stepSfx(){
     if(!AC || !humOn) return;
     if(!stepBuf){
@@ -54,7 +60,7 @@ export function createAudio() {
     const f = AC.createBiquadFilter(); f.type="lowpass";
     f.frequency.value = 210 + Math.random()*160;
     const g = AC.createGain(); g.gain.value = 0.05 + Math.random()*0.03;
-    s.connect(f).connect(g).connect(AC.destination); s.start();
+    s.connect(f).connect(g).connect(master); s.start();
   }
   function playGlitchSfx(){
     if(!AC) return;
@@ -64,7 +70,7 @@ export function createAudio() {
     o.frequency.exponentialRampToValueAtTime(24, AC.currentTime+1.4);
     g.gain.setValueAtTime(.12, AC.currentTime);
     g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime+1.8);
-    o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime+1.9);
+    o.connect(g).connect(master); o.start(); o.stop(AC.currentTime+1.9);
   }
 
   /* --- game audio (exit whine guides you; drone means it is near) --- */
@@ -76,13 +82,13 @@ export function createAudio() {
     const lfo = AC.createOscillator(); lfo.frequency.value = 4.2;
     const lfoG = AC.createGain(); lfoG.gain.value = 7;
     lfo.connect(lfoG).connect(wo.frequency);
-    if(whinePan) wo.connect(whineGain).connect(whinePan).connect(AC.destination);
-    else wo.connect(whineGain).connect(AC.destination);
+    if(whinePan) wo.connect(whineGain).connect(whinePan).connect(master);
+    else wo.connect(whineGain).connect(master);
     wo.start(); lfo.start();
     droneGain = AC.createGain(); droneGain.gain.value = 0;
     const d1 = AC.createOscillator(); d1.type = "sine"; d1.frequency.value = 41;
     const d2 = AC.createOscillator(); d2.type = "sine"; d2.frequency.value = 47;
-    d1.connect(droneGain); d2.connect(droneGain); droneGain.connect(AC.destination);
+    d1.connect(droneGain); d2.connect(droneGain); droneGain.connect(master);
     d1.start(); d2.start();
   }
   function blipSfx(){
@@ -92,7 +98,7 @@ export function createAudio() {
     o.frequency.setValueAtTime(1180, AC.currentTime + .07);
     g.gain.setValueAtTime(.05, AC.currentTime);
     g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + .18);
-    o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime + .2);
+    o.connect(g).connect(master); o.start(); o.stop(AC.currentTime + .2);
   }
   function winSfx(){
     if(!AC) return;
@@ -102,12 +108,12 @@ export function createAudio() {
       g.gain.setValueAtTime(.0001, AC.currentTime + d);
       g.gain.exponentialRampToValueAtTime(.08, AC.currentTime + d + .04);
       g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + d + .9);
-      o.connect(g).connect(AC.destination); o.start(AC.currentTime + d); o.stop(AC.currentTime + d + 1);
+      o.connect(g).connect(master); o.start(AC.currentTime + d); o.stop(AC.currentTime + d + 1);
     });
   }
 
   return {
-    buildHum, setHum, stepSfx, playGlitchSfx, buildGameAudio, blipSfx, winSfx,
+    buildHum, setHum, setVolume, stepSfx, playGlitchSfx, buildGameAudio, blipSfx, winSfx,
     get AC(){ return AC; },
     get humOn(){ return humOn; },
     get gAudioReady(){ return gAudioReady; },

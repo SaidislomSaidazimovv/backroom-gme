@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useBackroomsEngine } from "./hooks/useBackroomsEngine.js";
+import GameMenu from "./components/GameMenu.jsx";
 import VhsOverlays from "./components/VhsOverlays.jsx";
 import WrongLevel from "./components/WrongLevel.jsx";
 import GameHud from "./components/GameHud.jsx";
@@ -16,6 +18,14 @@ import Footer from "./components/content/Footer.jsx";
 
 export default function App() {
   useBackroomsEngine();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // The "ENTER THE MAZE" button opens this menu instead of starting directly.
+  // Menu PLAY closes it and tells the engine to start via a custom event.
+  const startGame = () => {
+    setMenuOpen(false);
+    dispatchEvent(new CustomEvent("backrooms:start"));
+  };
 
   // Order mirrors the original backrooms.html body so z-index / stacking is
   // preserved. All behavior is wired by the engine via element ids — the
@@ -38,10 +48,12 @@ export default function App() {
         <Tapes />
         <Entity />
         <Noclip />
-        <PlaySec />
+        <PlaySec onEnter={() => setMenuOpen(true)} />
       </main>
 
       <Footer />
+
+      <GameMenu open={menuOpen} onClose={() => setMenuOpen(false)} onPlay={startGame} />
     </>
   );
 }

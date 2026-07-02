@@ -4,6 +4,7 @@ import { startOsd } from "./osd.js";
 import { startUi } from "./ui.js";
 import { makeTex, createWorldTextures } from "./textures.js";
 import { createAudio } from "./audio.js";
+import { settings, SKINS, DIFFICULTIES, QUALITY } from "./settings.js";
 
 /**
  * THE BACKROOMS engine — ported verbatim from the original single-file
@@ -446,12 +447,13 @@ document.addEventListener("pointerlockchange", ()=>{ plActive = document.pointer
 document.addEventListener("pointerlockerror", ()=>{ plActive = false; });
 addEventListener("mousemove", e=>{
   if(!gameMode) return;
+  const st = settings.get(); const iy = st.invertY ? -1 : 1;
   if(plActive){
-    gYaw -= e.movementX * 0.0022;
-    gPitch = Math.max(-1.25, Math.min(1.25, gPitch - e.movementY * 0.002));
+    gYaw -= e.movementX * 0.0022 * st.sens;
+    gPitch = Math.max(-1.25, Math.min(1.25, gPitch - e.movementY * 0.002 * st.sens * iy));
   } else if(dragLook){
-    gYaw -= (e.clientX - dragLook.x) * 0.0036;
-    gPitch = Math.max(-1.25, Math.min(1.25, gPitch - (e.clientY - dragLook.y) * 0.003));
+    gYaw -= (e.clientX - dragLook.x) * 0.0036 * st.sens;
+    gPitch = Math.max(-1.25, Math.min(1.25, gPitch - (e.clientY - dragLook.y) * 0.003 * st.sens * iy));
     dragLook = {x: e.clientX, y: e.clientY};
   }
 });
@@ -482,8 +484,9 @@ addEventListener("touchmove", e=>{
       tMove.dx = Math.max(-1, Math.min(1, (t.clientX - tMove.x0)/45));
       tMove.dy = Math.max(-1, Math.min(1, (t.clientY - tMove.y0)/45));
     } else if(tLook && t.identifier === tLook.id){
-      gYaw -= (t.clientX - tLook.px) * 0.005;
-      gPitch = Math.max(-1.25, Math.min(1.25, gPitch - (t.clientY - tLook.py) * 0.004));
+      const st = settings.get(); const iy = st.invertY ? -1 : 1;
+      gYaw -= (t.clientX - tLook.px) * 0.005 * st.sens;
+      gPitch = Math.max(-1.25, Math.min(1.25, gPitch - (t.clientY - tLook.py) * 0.004 * st.sens * iy));
       tLook.px = t.clientX; tLook.py = t.clientY;
     }
   }
@@ -556,7 +559,8 @@ function exitToSite(){
   for(const b of bats) b.m.visible = false;
   document.body.classList.remove("in-game");
 }
-document.getElementById("startGame").addEventListener("click", startGame);
+// ENTER THE MAZE (#startGame) opens the React pre-game menu; its PLAY dispatches this.
+addEventListener("backrooms:start", startGame);
 document.getElementById("gRetry").addEventListener("click", startGame);
 document.getElementById("gReturn").addEventListener("click", exitToSite);
 document.getElementById("gQuit").addEventListener("click", ()=> endGame("quit"));
@@ -595,7 +599,7 @@ function updateGame(dt, t){
 
   /* battery */
   if(torchOn){
-    gBattery -= dt * (100/140);
+    gBattery -= dt * (100/140) * DIFFICULTIES[settings.get().difficulty].drain;
     if(gBattery <= 0){ gBattery = 0; setTorch(false); }
   }
   gBatFill.style.width = gBattery + "%";
@@ -627,7 +631,7 @@ function updateGame(dt, t){
   const dirToEnt = Math.atan2(-(entW.x - px), -(entW.z - pz));
   const lookOff = Math.abs(normA(dirToEnt - gYaw));
   const lit = torchOn && torchI > 1 && ed < 15 && lookOff < 0.3;
-  const eSpd = lit ? 0.12 : (ed > 26 ? 1.15 : 1.75);
+  const eSpd = lit ? 0.12 : (ed > 26 ? 1.15 : 1.75) * DIFFICULTIES[settings.get().difficulty].ent;
   const ex2 = entW.x + (edx/ed)*eSpd*dt, ez2 = entW.z + (edz/ed)*eSpd*dt;
   if(!blockedAt(ex2, entW.z)) entW.x = ex2;
   if(!blockedAt(entW.x, ez2)) entW.z = ez2;
@@ -663,6 +667,49 @@ __cleanups.push(startVhs({ reduceMotion }));
 
 /* ================= OSD: battery + clock + tape counter ================= */
 __cleanups.push(startOsd());
+
+/* ================= LIVE SETTINGS (graphics · skin · volume) ================= */
+function applyGraphics(){
+  const s = settings.get();
+  const q = QUALITY[s.quality] || QUALITY.high;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, COARSE ? 1.1 : q.ratio));
+  renderer.setSize(innerWidth, innerHeight, false);
+
+  const sh = !!s.shadows;
+  if(renderer.shadowMap.enabled !== sh){
+    renderer.shadowMap.enabled = sh;
+    scene.traverse(o=>{ if(o.isMesh && o.material){
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      ms.forEach(m=>{ m.needsUpdate = true; });
+    }});
+  }
+  torch.castShadow = sh;
+  for(const p of pillars){ p.castShadow = p.receiveShadow = sh; }
+  floor.receiveShadow = ceil.receiveShadow = sh;
+  entG.traverse(o=>{ if(o.isMesh) o.castShadow = sh; });
+  exitG.traverse(o=>{ if(o.isMesh && o.material === jambMat) o.castShadow = sh; });
+  if(torch.shadow.mapSize.width !== q.shadowMap){
+    torch.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+    if(torch.shadow.map){ torch.shadow.map.dispose(); torch.shadow.map = null; }
+  }
+  renderer.shadowMap.needsUpdate = true;
+
+  scene.fog.density = s.fog;
+  document.body.classList.toggle("no-vhs", !s.vhs);
+}
+function applySkin(){
+  const s = settings.get();
+  const skin = SKINS.find(k=>k.id===s.skin) || SKINS[0];
+  torch.color.setHex(skin.torch);
+  fill.color.setHex(skin.fill);
+  const xh = document.querySelector(".xh");
+  if(xh){ xh.style.background = skin.accent; xh.style.boxShadow = `0 0 6px ${skin.accent}`; }
+  document.body.style.setProperty("--skin", skin.accent);
+}
+applyGraphics();
+applySkin();
+audio.setVolume(settings.get().volume);
+__cleanups.push(settings.subscribe(()=>{ applyGraphics(); applySkin(); audio.setVolume(settings.get().volume); }));
 
 /* ================= LOADER + CURSOR + REVEALS + WHISPER ================= */
 __cleanups.push(startUi({ onPlay: () => audio.setHum(true) }));
