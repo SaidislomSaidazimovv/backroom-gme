@@ -33,14 +33,14 @@ export default function GameMenu({ open, onClose, onPlay }) {
       </div>
 
       <div className="gm-body">
-        <nav className="gm-nav">
+        <div className="gm-nav">
           <button className="gm-tab play" onClick={onPlay}>► PLAY</button>
           <button className={"gm-tab" + (tab === "settings" ? " active" : "")} onClick={() => setTab("settings")}>SETTINGS</button>
           <button className={"gm-tab" + (tab === "graphics" ? " active" : "")} onClick={() => setTab("graphics")}>GRAPHICS</button>
           <button className={"gm-tab" + (tab === "skins" ? " active" : "")} onClick={() => setTab("skins")}>SKINS</button>
-        </nav>
+        </div>
 
-        <section className="gm-panel">
+        <div className="gm-panel">
           {tab === "brief" && (
             <>
               <h3>Objective — Find the Exit</h3>
@@ -139,7 +139,7 @@ export default function GameMenu({ open, onClose, onPlay }) {
               </div>
             </>
           )}
-        </section>
+        </div>
       </div>
 
       <div className="gm-foot">

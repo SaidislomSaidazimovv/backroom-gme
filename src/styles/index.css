@@ -240,7 +240,7 @@ body.no-vhs .tracking-bar{display:none}
 
 /* ============ PRE-GAME MENU ============ */
 .game-menu{position:fixed;inset:0;z-index:210;display:none;flex-direction:column;
-  background:radial-gradient(ellipse at center,rgba(6,5,3,.88),rgba(2,1,0,.97));
+  background:radial-gradient(ellipse at center,rgba(6,5,3,.96),rgba(1,1,0,.995));
   padding:clamp(20px,5vh,58px) clamp(18px,6vw,90px);font-family:'VT323',monospace;
   color:var(--osd);overflow-y:auto}
 .game-menu.on{display:flex;animation:gmIn .35s ease-out}
