@@ -46,10 +46,10 @@ Two-branch model. Daily commits go directly to `dev` (the integration branch) â€
 
 ### Project verification commands
 
-- **Typecheck / build:** `open backrooms.html in a browser and click through the game`
-- **Tests:** same manual browser check â€” no automated test suite.
+- **Typecheck / build:** `npm run build`
+- **Tests:** `npm run dev`, then open http://localhost:5173 and click through the game (no automated test suite).
 
-Run this manual check before moving any task to AWAITING REVIEW.
+Run `npm run build` + the manual browser check before moving any task to AWAITING REVIEW.
 
 ### Commit format
 

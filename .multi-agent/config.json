@@ -10,8 +10,8 @@
   "integration_branch": "dev",
   "prod_branch": "main",
   "approval_gate_enabled": true,
-  "build_command": "open backrooms.html in a browser and click through the game",
-  "test_command": "open backrooms.html in a browser and click through the game",
+  "build_command": "npm run build",
+  "test_command": "npm run dev (then click through the game in the browser)",
   "commit_format": "conventional",
   "configured_at": "2026-07-02T09:07:22Z",
   "configured_via": "preset:squad"
