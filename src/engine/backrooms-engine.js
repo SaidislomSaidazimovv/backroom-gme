@@ -74,6 +74,34 @@ torch.target = torchTarget;
 const fill = new THREE.PointLight(0xffdba0, 0.16, 5.5, 1.6); // faint spill around the hand
 scene.add(fill);
 
+/* --- first-person arm + flashlight viewmodel (what "you" are holding) --- */
+scene.add(camera); // parent the viewmodel to the camera so it renders in-view
+const viewmodel = new THREE.Group();
+const vmSkinMat = new THREE.MeshStandardMaterial({ color: 0x9c6f50, roughness: 0.85 });      // hand
+const vmSleeveMat = new THREE.MeshStandardMaterial({ color: 0x23252b, roughness: 0.95 });     // jacket cuff
+const vmMetalMat = new THREE.MeshStandardMaterial({ color: 0x111114, roughness: 0.5, metalness: 0.7 }); // torch
+const vmLensMat = new THREE.MeshBasicMaterial({ color: 0xffe2ae, side: THREE.DoubleSide });
+const vmSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.08, 0.42, 10), vmSleeveMat);
+vmSleeve.rotation.x = Math.PI / 2 * 0.86; vmSleeve.position.set(0.03, -0.07, 0.17); viewmodel.add(vmSleeve);
+const vmHand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.075, 0.12), vmSkinMat);
+vmHand.position.set(0.0, 0.0, -0.10); viewmodel.add(vmHand);
+[-0.032, 0.0, 0.032].forEach((fx) => {                                        // knuckles gripping the torch
+  const f = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.045, 0.055), vmSkinMat);
+  f.position.set(fx, 0.05, -0.12); viewmodel.add(f);
+});
+const vmBody = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.033, 0.24, 14), vmMetalMat);
+vmBody.rotation.x = Math.PI / 2; vmBody.position.set(0.0, 0.03, -0.24); viewmodel.add(vmBody);
+const vmHead = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.033, 0.07, 14), vmMetalMat);
+vmHead.rotation.x = Math.PI / 2; vmHead.position.set(0.0, 0.03, -0.38); viewmodel.add(vmHead);
+const vmLens = new THREE.Mesh(new THREE.CircleGeometry(0.048, 18), vmLensMat);
+vmLens.rotation.y = Math.PI; vmLens.position.set(0.0, 0.03, -0.415); viewmodel.add(vmLens);
+const vmLight = new THREE.PointLight(0xffe2ae, 0.55, 1.5, 2.2);                 // dim spill so the hand is visible
+vmLight.position.set(0.0, 0.06, -0.18); viewmodel.add(vmLight);
+viewmodel.position.set(0.33, -0.30, -0.5);
+viewmodel.rotation.set(0.05, -0.16, 0.05);
+viewmodel.visible = false;                                                     // only shown in game mode
+camera.add(viewmodel);
+
 /* --- geometry --- */
 carpetTex.repeat.set(24,24); carpetBump.repeat.set(24,24);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(120,120),
@@ -333,6 +361,19 @@ function loop(now){
   fill.intensity = 0.05 + torchI*0.075;
   flickEl.style.opacity = torchFlick > 0 ? 0.02 : 0;
 
+  /* first-person viewmodel: only in-game, bobs with the gait + breath */
+  viewmodel.visible = gameMode;
+  if(gameMode){
+    const runv = (keys["ShiftLeft"]||keys["ShiftRight"]) ? 1 : 0;
+    const amp = (0.014 + runv*0.02) * Math.min(1, speed);
+    const sp = stepPhase;
+    viewmodel.position.x = 0.33 + Math.sin(sp*Math.PI*2)*amp*0.6 + Math.sin(t*1.3)*0.004;
+    viewmodel.position.y = -0.30 - Math.abs(Math.sin(sp*Math.PI))*amp + Math.sin(t*1.6)*0.004 - breath*0.02;
+    viewmodel.position.z = -0.5 + Math.sin(sp*Math.PI*2)*amp*0.3;
+    viewmodel.rotation.z = 0.05 + Math.sin(sp*Math.PI*2)*0.03*(0.5+runv);
+    viewmodel.rotation.x = 0.05 + Math.sin(sp*Math.PI)*0.02*Math.min(1, speed);
+  }
+
   /* dust drifts and wraps around the player */
   if(!reduceMotion){
     const dp = dust.geometry.attributes.position.array;
@@ -355,6 +396,7 @@ __rafId = requestAnimationFrame(loop);
 
 /* ================= GAME — PLAYABLE LEVEL 0 ================= */
 let gameMode = false, gYaw = 0, gPitch = 0, gBattery = 100, gStart = 0;
+let breath = 0, breathPhase = 0;
 const keys = {};
 let exitW = {x:0, z:0}, entW = {x:0, z:0}, bats = [];
 const isTouch = matchMedia("(pointer:coarse)").matches;
@@ -516,7 +558,7 @@ function startGame(){
   }
   exitG.visible = entG.visible = true;
   setTorch(true);
-  if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio();
+  if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio(); audio.buildBreathing(); breathPhase = 0;
   document.body.classList.add("in-game");
   gameHud.classList.add("on"); gameEnd.classList.remove("on");
   gHint.textContent = isTouch
@@ -531,6 +573,7 @@ function endGame(kind){
   gameMode = false;
   if(document.pointerLockElement) document.exitPointerLock();
   if(audio.whineGain){ audio.whineGain.gain.value = 0; audio.droneGain.gain.value = 0; }
+  audio.setBreath(0);
   noiseEl.style.opacity = .06;
   gameHud.classList.remove("on");
   // hand the camera back to the wandering walker
@@ -647,6 +690,13 @@ function updateGame(dt, t){
   /* dread + guidance audio */
   const prox = Math.max(0, (16 - ed)/16);
   noiseEl.style.opacity = .06 + prox*0.28;
+  /* breathing — heavier when running, low on battery, or the entity is close */
+  const running = (keys["ShiftLeft"]||keys["ShiftRight"]) && (Math.abs(ix)+Math.abs(iz) > 0.05);
+  const exert = (running ? 1 : 0.3) + (gBattery < 25 ? 0.3 : 0) + prox*0.6;
+  breathPhase += dt * (0.55 + exert*0.9);
+  const be = Math.max(0, Math.sin(breathPhase*Math.PI*2));
+  breath = be*be;
+  audio.setBreath(breath * (0.02 + exert*0.045));
   if(audio.gAudioReady){
     const vol = audio.humOn ? 1 : 0;
     audio.whineGain.gain.value = vol * Math.max(0, (46 - exD)/46) * 0.06;
@@ -702,6 +752,8 @@ function applySkin(){
   const skin = SKINS.find(k=>k.id===s.skin) || SKINS[0];
   torch.color.setHex(skin.torch);
   fill.color.setHex(skin.fill);
+  vmLens.material.color.setHex(skin.torch);
+  vmLight.color.setHex(skin.torch);
   const xh = document.querySelector(".xh");
   if(xh){ xh.style.background = skin.accent; xh.style.boxShadow = `0 0 6px ${skin.accent}`; }
   document.body.style.setProperty("--skin", skin.accent);

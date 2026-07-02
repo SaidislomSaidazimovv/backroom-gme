@@ -15,6 +15,7 @@ export function createAudio() {
   let _volume = 1;
   let stepBuf = null;
   let gAudioReady = false, whineGain = null, whinePan = null, droneGain = null;
+  let breathReady = false, breathGain = null;
   const soundBtn = document.getElementById("soundBtn");
 
   function buildHum(){
@@ -112,8 +113,24 @@ export function createAudio() {
     });
   }
 
+  /* --- breathing: looping band-passed noise whose level the engine drives per
+     frame (louder + faster when running / low battery / the entity is near) --- */
+  function buildBreathing(){
+    if(breathReady || !AC) return; breathReady = true;
+    const len = AC.sampleRate*2, buf = AC.createBuffer(1,len,AC.sampleRate), ch = buf.getChannelData(0);
+    for(let i=0;i<len;i++) ch[i] = (Math.random()*2-1);
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 560; bp.Q.value = 0.8;
+    breathGain = AC.createGain(); breathGain.gain.value = 0;
+    src.connect(bp).connect(breathGain).connect(master); src.start();
+  }
+  function setBreath(level){
+    if(breathGain) breathGain.gain.setTargetAtTime(Math.max(0, level), AC.currentTime, 0.03);
+  }
+
   return {
     buildHum, setHum, setVolume, stepSfx, playGlitchSfx, buildGameAudio, blipSfx, winSfx,
+    buildBreathing, setBreath,
     get AC(){ return AC; },
     get humOn(){ return humOn; },
     get gAudioReady(){ return gAudioReady; },
