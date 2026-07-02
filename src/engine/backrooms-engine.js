@@ -1,4 +1,9 @@
 import * as THREE from "three";
+import { startVhs } from "./vhs.js";
+import { startOsd } from "./osd.js";
+import { startUi } from "./ui.js";
+import { makeTex, createWorldTextures } from "./textures.js";
+import { createAudio } from "./audio.js";
 
 /**
  * THE BACKROOMS engine — ported verbatim from the original single-file
@@ -22,11 +27,13 @@ export function initBackrooms() {
   // whole lifetime. Only the render loop + persistent timers are registered so
   // a (rare) cleanup can stop them.
   const __intervals = [];
+  const __cleanups = [];
   let __rafId = 0;
   const __setInterval = (fn, ms) => { const id = setInterval(fn, ms); __intervals.push(id); return id; };
 
 "use strict";
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const audio = createAudio();
 
 /* ================= THREE — LEVEL 0 / FLASHLIGHT WALKER ================= */
 const canvas = document.getElementById("scene");
@@ -46,91 +53,8 @@ camera.rotation.order = "YXZ";
 camera.position.set(0, 1.62, 0);
 
 /* --- procedural textures --- */
-function tex(draw, w=256, h=256){
-  const c = document.createElement("canvas"); c.width=w; c.height=h;
-  draw(c.getContext("2d"), w, h);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  return t;
-}
-// classic backrooms wallpaper: wide two-tone bands, paper grain, aging, water damage
-const wallTex = tex((g,w,h)=>{
-  g.fillStyle="#b0a05f"; g.fillRect(0,0,w,h);
-  const bw = 44;
-  for(let x=0;x<w;x+=bw*2){ g.fillStyle="rgba(0,0,0,.075)"; g.fillRect(x,0,bw,h); }
-  for(let x=0;x<w;x+=bw){ g.fillStyle="rgba(255,242,190,.06)"; g.fillRect(x,0,3,h); }
-  for(let i=0;i<12000;i++){ g.fillStyle=`rgba(28,22,8,${Math.random()*0.1})`;
-    g.fillRect(Math.random()*w, Math.random()*h, 1.5, 1.5); }
-  let gr = g.createLinearGradient(0,0,0,h);
-  gr.addColorStop(0,"rgba(38,30,10,.24)"); gr.addColorStop(.16,"rgba(38,30,10,0)");
-  gr.addColorStop(.84,"rgba(26,20,7,0)");  gr.addColorStop(1,"rgba(26,20,7,.34)");
-  g.fillStyle=gr; g.fillRect(0,0,w,h);
-  for(let i=0;i<10;i++){ // dripping water stains
-    const x=Math.random()*w, y0=Math.random()*h*.35, len=60+Math.random()*220;
-    const dg=g.createLinearGradient(0,y0,0,y0+len);
-    dg.addColorStop(0,"rgba(50,40,13,.3)"); dg.addColorStop(1,"rgba(50,40,13,0)");
-    g.fillStyle=dg; g.fillRect(x,y0,4+Math.random()*9,len);
-  }
-  for(let i=0;i<5;i++){ // moisture blotches
-    const x=Math.random()*w, y=h*.6+Math.random()*h*.4, r=30+Math.random()*70;
-    const bg=g.createRadialGradient(x,y,3,x,y,r);
-    bg.addColorStop(0,"rgba(44,34,10,.22)"); bg.addColorStop(1,"rgba(44,34,10,0)");
-    g.fillStyle=bg; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
-  }
-}, 512, 512);
-const wallBump = tex((g,w,h)=>{
-  g.fillStyle="#808080"; g.fillRect(0,0,w,h);
-  const bw = 44;
-  for(let x=0;x<w;x+=bw){ g.fillStyle="#6f6f6f"; g.fillRect(x,0,3,h); }
-  for(let i=0;i<16000;i++){ const v=110+Math.random()*60|0;
-    g.fillStyle=`rgb(${v},${v},${v})`; g.fillRect(Math.random()*w, Math.random()*h, 1.5, 1.5); }
-}, 512, 512);
-// worn office carpet: directional fibre strokes, traffic wear, damp patches
-const carpetTex = tex((g,w,h)=>{
-  g.fillStyle="#57492c"; g.fillRect(0,0,w,h);
-  for(let i=0;i<26000;i++){
-    const t2=Math.random();
-    g.fillStyle=`rgba(${38+t2*70|0},${32+t2*58|0},${14+t2*30|0},.55)`;
-    g.fillRect(Math.random()*w, Math.random()*h, 1, 2+Math.random()*3);
-  }
-  for(let i=0;i<8;i++){ // damp / worn patches
-    const x=Math.random()*w, y=Math.random()*h, r=25+Math.random()*65;
-    const gr2=g.createRadialGradient(x,y,3,x,y,r);
-    gr2.addColorStop(0,"rgba(18,14,5,.42)"); gr2.addColorStop(1,"rgba(18,14,5,0)");
-    g.fillStyle=gr2; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
-  }
-}, 512, 512);
-const carpetBump = tex((g,w,h)=>{
-  g.fillStyle="#7a7a7a"; g.fillRect(0,0,w,h);
-  for(let i=0;i<30000;i++){ const v=80+Math.random()*110|0;
-    g.fillStyle=`rgb(${v},${v},${v})`; g.fillRect(Math.random()*w, Math.random()*h, 1, 2+Math.random()*2); }
-}, 512, 512);
-// drop ceiling: acoustic tiles with speckle holes, bevelled T-grid, stain rings
-const ceilTex = tex((g,w,h)=>{
-  g.fillStyle="#8d835c"; g.fillRect(0,0,w,h);
-  for(let i=0;i<14000;i++){ g.fillStyle=`rgba(30,25,10,${.08+Math.random()*.16})`;
-    const r=Math.random()<.85?1:2; g.fillRect(Math.random()*w, Math.random()*h, r, r); }
-  for(let i=0;i<5;i++){ // brown stain rings from leaks
-    const x=Math.random()*w, y=Math.random()*h, r=18+Math.random()*40;
-    g.strokeStyle="rgba(96,66,22,.4)"; g.lineWidth=2+Math.random()*3;
-    g.beginPath(); g.arc(x,y,r,0,7); g.stroke();
-    const sg=g.createRadialGradient(x,y,2,x,y,r);
-    sg.addColorStop(0,"rgba(96,66,22,.14)"); sg.addColorStop(1,"rgba(96,66,22,0)");
-    g.fillStyle=sg; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
-  }
-  for(let x=0;x<=w;x+=128){ g.fillStyle="rgba(28,22,9,.65)"; g.fillRect(x-2,0,4,h);
-    g.fillStyle="rgba(220,205,150,.16)"; g.fillRect(x+2,0,1,h); }
-  for(let y=0;y<=h;y+=128){ g.fillStyle="rgba(28,22,9,.65)"; g.fillRect(0,y-2,w,4);
-    g.fillStyle="rgba(220,205,150,.16)"; g.fillRect(0,y+2,w,1); }
-}, 512, 512);
-const ceilBump = tex((g,w,h)=>{
-  g.fillStyle="#8a8a8a"; g.fillRect(0,0,w,h);
-  for(let i=0;i<16000;i++){ const v=60+Math.random()*90|0;
-    g.fillStyle=`rgb(${v},${v},${v})`; g.fillRect(Math.random()*w, Math.random()*h, 1.5, 1.5); }
-  for(let x=0;x<=w;x+=128){ g.fillStyle="#4a4a4a"; g.fillRect(x-2,0,4,h); }
-  for(let y=0;y<=h;y+=128){ g.fillStyle="#4a4a4a"; g.fillRect(0,y-2,w,4); }
-}, 512, 512);
+const tex = makeTex(renderer);
+const { wallTex, wallBump, carpetTex, carpetBump, ceilTex, ceilBump } = createWorldTextures(tex);
 
 const S = 7, RANGE = 5, H = 3.1;
 const world = new THREE.Group(); scene.add(world);
@@ -295,7 +219,7 @@ document.getElementById("noclipBtn").addEventListener("click", ()=>{
   if(falling) return;
   falling = 1; document.body.classList.add("falling");
   veil.classList.remove("on"); void veil.offsetWidth; veil.classList.add("on");
-  playGlitchSfx();
+  audio.playGlitchSfx();
   setTimeout(()=>{ wrong.classList.add("on");
     let n = 3;
     const iv = __setInterval(()=>{ n--; wrongCount.textContent = "RETURNING TO LEVEL 0 IN " + n;
@@ -363,7 +287,7 @@ function loop(now){
   /* gait: footsteps, bob, breath */
   stepPhase += speed*dt*0.92;
   const stride = Math.floor(stepPhase*2);
-  if(stride !== lastStep && speed > 0.3){ lastStep = stride; stepSfx(); }
+  if(stride !== lastStep && speed > 0.3){ lastStep = stride; audio.stepSfx(); }
   const bob = Math.sin(stepPhase*Math.PI*2)*0.05*Math.min(speed,1);
   const breath = Math.sin(t*1.35)*0.013;
   const roll = Math.sin(stepPhase*Math.PI)*0.010*Math.min(speed,1);
@@ -504,46 +428,6 @@ for(let i=0;i<6;i++){
   bats.push({m, x:0, z:0, taken:true});
 }
 
-/* --- game audio (exit whine guides you; drone means it is near) --- */
-let gAudioReady = false, whineGain, whinePan, droneGain;
-function buildGameAudio(){
-  if(gAudioReady || !AC) return; gAudioReady = true;
-  whineGain = AC.createGain(); whineGain.gain.value = 0;
-  whinePan = AC.createStereoPanner ? AC.createStereoPanner() : null;
-  const wo = AC.createOscillator(); wo.type = "sine"; wo.frequency.value = 612;
-  const lfo = AC.createOscillator(); lfo.frequency.value = 4.2;
-  const lfoG = AC.createGain(); lfoG.gain.value = 7;
-  lfo.connect(lfoG).connect(wo.frequency);
-  if(whinePan) wo.connect(whineGain).connect(whinePan).connect(AC.destination);
-  else wo.connect(whineGain).connect(AC.destination);
-  wo.start(); lfo.start();
-  droneGain = AC.createGain(); droneGain.gain.value = 0;
-  const d1 = AC.createOscillator(); d1.type = "sine"; d1.frequency.value = 41;
-  const d2 = AC.createOscillator(); d2.type = "sine"; d2.frequency.value = 47;
-  d1.connect(droneGain); d2.connect(droneGain); droneGain.connect(AC.destination);
-  d1.start(); d2.start();
-}
-function blipSfx(){
-  if(!AC) return;
-  const o = AC.createOscillator(), g = AC.createGain();
-  o.type = "square"; o.frequency.setValueAtTime(760, AC.currentTime);
-  o.frequency.setValueAtTime(1180, AC.currentTime + .07);
-  g.gain.setValueAtTime(.05, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + .18);
-  o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime + .2);
-}
-function winSfx(){
-  if(!AC) return;
-  [[392,0],[523,.14],[659,.28]].forEach(([f,d])=>{
-    const o = AC.createOscillator(), g = AC.createGain();
-    o.type = "sine"; o.frequency.value = f;
-    g.gain.setValueAtTime(.0001, AC.currentTime + d);
-    g.gain.exponentialRampToValueAtTime(.08, AC.currentTime + d + .04);
-    g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + d + .9);
-    o.connect(g).connect(AC.destination); o.start(AC.currentTime + d); o.stop(AC.currentTime + d + 1);
-  });
-}
-
 /* --- input --- */
 addEventListener("keydown", e=>{
   keys[e.code] = true;
@@ -629,7 +513,7 @@ function startGame(){
   }
   exitG.visible = entG.visible = true;
   setTorch(true);
-  if(!AC){ buildHum(); } setHum(true); buildGameAudio();
+  if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio();
   document.body.classList.add("in-game");
   gameHud.classList.add("on"); gameEnd.classList.remove("on");
   gHint.textContent = isTouch
@@ -643,7 +527,7 @@ function startGame(){
 function endGame(kind){
   gameMode = false;
   if(document.pointerLockElement) document.exitPointerLock();
-  if(whineGain){ whineGain.gain.value = 0; droneGain.gain.value = 0; }
+  if(audio.whineGain){ audio.whineGain.gain.value = 0; audio.droneGain.gain.value = 0; }
   noiseEl.style.opacity = .06;
   gameHud.classList.remove("on");
   // hand the camera back to the wandering walker
@@ -653,12 +537,12 @@ function endGame(kind){
   const secs = Math.round((performance.now() - gStart)/1000);
   const mm = Math.floor(secs/60), ss = String(secs%60).padStart(2,"0");
   if(kind === "win"){
-    winSfx();
+    audio.winSfx();
     gEndTitle.textContent = "YOU FOUND THE DOOR";
     gEndTitle.style.color = "var(--wall-bright)"; gEndTitle.style.textShadow = "0 0 26px rgba(232,217,138,.4)";
     gEndSub.textContent = `ESCAPED LEVEL 0 IN ${mm}:${ss} — NOBODY WILL BELIEVE YOU`;
   } else {
-    playGlitchSfx();
+    audio.playGlitchSfx();
     veil.classList.remove("on"); void veil.offsetWidth; veil.classList.add("on");
     gEndTitle.textContent = "IT FOUND YOU";
     gEndTitle.style.color = "var(--blood)"; gEndTitle.style.textShadow = "0 0 30px rgba(255,42,31,.5)";
@@ -700,7 +584,7 @@ function updateGame(dt, t){
   /* gait */
   stepPhase += spd*dt*0.5;
   const stride = Math.floor(stepPhase*2);
-  if(stride !== lastStep && spd > 0.4){ lastStep = stride; stepSfx(); }
+  if(stride !== lastStep && spd > 0.4){ lastStep = stride; audio.stepSfx(); }
   const bob = Math.sin(stepPhase*Math.PI*2)*0.05*Math.min(spd/2, 1.2);
   gaitBob = bob;
   camera.rotation.y = gYaw;
@@ -726,7 +610,7 @@ function updateGame(dt, t){
       b.taken = true; b.m.visible = false;
       gBattery = Math.min(100, gBattery + 35);
       if(!torchOn) setTorch(true);
-      blipSfx();
+      audio.blipSfx();
     }
   }
 
@@ -759,14 +643,14 @@ function updateGame(dt, t){
   /* dread + guidance audio */
   const prox = Math.max(0, (16 - ed)/16);
   noiseEl.style.opacity = .06 + prox*0.28;
-  if(gAudioReady){
-    const vol = humOn ? 1 : 0;
-    whineGain.gain.value = vol * Math.max(0, (46 - exD)/46) * 0.06;
-    if(whinePan){
+  if(audio.gAudioReady){
+    const vol = audio.humOn ? 1 : 0;
+    audio.whineGain.gain.value = vol * Math.max(0, (46 - exD)/46) * 0.06;
+    if(audio.whinePan){
       const rel = normA(Math.atan2(-exDx, -exDz) - gYaw);
-      whinePan.pan.value = Math.max(-1, Math.min(1, -Math.sin(rel)));
+      audio.whinePan.pan.value = Math.max(-1, Math.min(1, -Math.sin(rel)));
     }
-    droneGain.gain.value = vol * prox * 0.1;
+    audio.droneGain.gain.value = vol * prox * 0.1;
   }
 
   /* clock */
@@ -774,143 +658,20 @@ function updateGame(dt, t){
   gTime.textContent = `T+ ${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")}`;
 }
 
-/* ================= VHS NOISE CANVAS ================= */
-const nz = document.getElementById("noise"), ng = nz.getContext("2d");
-nz.width = 220; nz.height = 140;
-nz.style.width = "100vw"; nz.style.height = "100vh";
-__setInterval(()=>{
-  if(reduceMotion) return;
-  const img = ng.createImageData(nz.width, nz.height);
-  const d = img.data;
-  for(let i=0;i<d.length;i+=4){ const v = Math.random()*255|0; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255; }
-  ng.putImageData(img,0,0);
-}, 66);
+/* ================= VHS NOISE CANVAS + TRACKING BAR ================= */
+__cleanups.push(startVhs({ reduceMotion }));
 
-/* tracking bar sweeps occasionally */
-const track = document.getElementById("track");
-__setInterval(()=>{
-  if(reduceMotion || Math.random() > .3) return;
-  track.style.transition = "none"; track.style.top = "-90px"; track.style.opacity = 1;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    track.style.transition = "top 1.6s linear, opacity .3s 1.4s";
-    track.style.top = "100vh"; track.style.opacity = 0;
-  }));
-}, 5000);
+/* ================= OSD: battery + clock + tape counter ================= */
+__cleanups.push(startOsd());
 
-/* ================= OSD: clock + tape counter ================= */
-const clock = document.getElementById("clock");
-const battery = document.getElementById("battery");
-let bat = 87;
-__setInterval(()=>{
-  bat = Math.max(9, bat - 1);
-  const seg = "\u25ae".repeat(Math.ceil(bat/25)) + "\u25af".repeat(4-Math.ceil(bat/25));
-  battery.textContent = `BAT ${seg} ${bat}%`;
-  battery.style.color = bat < 25 ? "var(--blood)" : "";
-}, 45000);
-const tapePos = document.getElementById("tapePos");
-let secs = 0, frames = 0;
-__setInterval(()=>{
-  frames++; if(frames>=30){frames=0; secs++;}
-  const s = 47*60 + secs, mm = String(Math.floor(s/60)%60).padStart(2,"0"), ss = String(s%60).padStart(2,"0");
-  clock.textContent = `SEP 23 1996   PM 11:${mm}:${ss}`;
-}, 33);
-addEventListener("scroll", ()=>{
-  const p = scrollY / Math.max(1, document.body.scrollHeight - innerHeight);
-  const tot = p*3600|0;
-  tapePos.textContent = `SP ${Math.floor(tot/3600)}:${String(Math.floor(tot/60)%60).padStart(2,"0")}:${String(tot%60).padStart(2,"0")}`;
-}, {passive:true});
-
-/* ================= AUDIO — 60Hz HUM ================= */
-let AC=null, humGain=null, humOn=false;
-const soundBtn = document.getElementById("soundBtn");
-function buildHum(){
-  AC = new (window.AudioContext||window.webkitAudioContext)();
-  humGain = AC.createGain(); humGain.gain.value = 0;
-  const lp = AC.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=900;
-  humGain.connect(lp).connect(AC.destination);
-  [[60,.5],[120,.28],[180,.1]].forEach(([f,g])=>{
-    const o = AC.createOscillator(); o.type="sawtooth"; o.frequency.value=f;
-    const og = AC.createGain(); og.gain.value=g;
-    o.connect(og).connect(humGain); o.start();
-  });
-  // faint air noise
-  const len = AC.sampleRate*2, buf = AC.createBuffer(1,len,AC.sampleRate), ch = buf.getChannelData(0);
-  for(let i=0;i<len;i++) ch[i] = (Math.random()*2-1)*0.25;
-  const src = AC.createBufferSource(); src.buffer=buf; src.loop=true;
-  const nf = AC.createBiquadFilter(); nf.type="bandpass"; nf.frequency.value=400; nf.Q.value=.4;
-  const ngn = AC.createGain(); ngn.gain.value=.12;
-  src.connect(nf).connect(ngn).connect(humGain); src.start();
-}
-function setHum(on){
-  humOn = on;
-  if(on && !AC) buildHum();
-  if(AC){ AC.resume(); humGain.gain.linearRampToValueAtTime(on? .055 : 0, AC.currentTime + .8); }
-  soundBtn.textContent = "HUM: " + (on?"ON":"OFF");
-  soundBtn.setAttribute("aria-pressed", on);
-}
-soundBtn.addEventListener("click", ()=> setHum(!humOn));
-let stepBuf = null;
-function stepSfx(){
-  if(!AC || !humOn) return;
-  if(!stepBuf){
-    const len = AC.sampleRate*0.14; stepBuf = AC.createBuffer(1,len,AC.sampleRate);
-    const ch = stepBuf.getChannelData(0);
-    for(let i=0;i<len;i++) ch[i] = (Math.random()*2-1) * Math.pow(1-i/len, 2.4);
-  }
-  const s = AC.createBufferSource(); s.buffer = stepBuf;
-  s.playbackRate.value = 0.85 + Math.random()*0.3;
-  const f = AC.createBiquadFilter(); f.type="lowpass";
-  f.frequency.value = 210 + Math.random()*160;
-  const g = AC.createGain(); g.gain.value = 0.05 + Math.random()*0.03;
-  s.connect(f).connect(g).connect(AC.destination); s.start();
-}
-function playGlitchSfx(){
-  if(!AC) return;
-  const o = AC.createOscillator(), g = AC.createGain();
-  o.type="square"; o.frequency.setValueAtTime(38, AC.currentTime);
-  o.frequency.exponentialRampToValueAtTime(400, AC.currentTime+.15);
-  o.frequency.exponentialRampToValueAtTime(24, AC.currentTime+1.4);
-  g.gain.setValueAtTime(.12, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime+1.8);
-  o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime+1.9);
-}
-
-/* ================= LOADER ================= */
-const loader = document.getElementById("loader");
-document.getElementById("playBtn").addEventListener("click", ()=>{
-  loader.classList.add("done");
-  setHum(true);
-});
-
-/* ================= CURSOR ================= */
-const cur = document.getElementById("cursor");
-addEventListener("pointermove", e=>{ cur.style.left = e.clientX+"px"; cur.style.top = e.clientY+"px"; });
-document.querySelectorAll("button,a,.tape").forEach(el=>{
-  el.addEventListener("pointerenter", ()=>cur.classList.add("hover"));
-  el.addEventListener("pointerleave", ()=>cur.classList.remove("hover"));
-});
-
-/* ================= SCROLL REVEALS ================= */
-const io = new IntersectionObserver(es=>{
-  es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
-},{threshold:.18});
-document.querySelectorAll(".rv").forEach(el=>io.observe(el));
-
-/* whisper text lights word-by-word on scroll */
-const wh = document.getElementById("whisper");
-wh.innerHTML = wh.textContent.split(" ").map(w=>`<span class="w">${w}</span>`).join(" ");
-const ws = [...wh.querySelectorAll(".w")];
-addEventListener("scroll", ()=>{
-  const r = wh.getBoundingClientRect();
-  const p = Math.min(1, Math.max(0, (innerHeight*0.85 - r.top) / (innerHeight*0.9)));
-  const lit = Math.floor(p*ws.length*1.4);
-  ws.forEach((s,i)=> s.classList.toggle("lit", i < lit));
-}, {passive:true});
+/* ================= LOADER + CURSOR + REVEALS + WHISPER ================= */
+__cleanups.push(startUi({ onPlay: () => audio.setHum(true) }));
 
   return function cleanup() {
     started = false;
     cancelAnimationFrame(__rafId);
     for (const id of __intervals) clearInterval(id);
+    for (const c of __cleanups) c();
     try { renderer.dispose(); } catch (e) { /* noop */ }
   };
 }
