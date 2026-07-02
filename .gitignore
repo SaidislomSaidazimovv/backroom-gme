@@ -1,2 +1,7 @@
+# dependencies / build output
+node_modules/
+dist/
+
+# multi-agent live state
 active_tasks.md
 active_files.md
