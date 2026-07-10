@@ -16,6 +16,7 @@ export function createAudio() {
   let stepBuf = null;
   let gAudioReady = false, whineGain = null, whinePan = null, droneGain = null;
   let breathReady = false, breathGain = null;
+  let heartReady = false, heartGain = null;
   const soundBtn = document.getElementById("soundBtn");
 
   function buildHum(){
@@ -128,9 +129,22 @@ export function createAudio() {
     if(breathGain) breathGain.gain.setTargetAtTime(Math.max(0, level), AC.currentTime, 0.03);
   }
 
+  /* --- heartbeat: a low sine thump whose gain the engine pulses per frame
+     (a lub-dub envelope) at a rate that climbs with fear --- */
+  function buildHeart(){
+    if(heartReady || !AC) return; heartReady = true;
+    const osc = AC.createOscillator(); osc.type = "sine"; osc.frequency.value = 54;
+    const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 120;
+    heartGain = AC.createGain(); heartGain.gain.value = 0;
+    osc.connect(lp).connect(heartGain).connect(master); osc.start();
+  }
+  function setHeart(level){
+    if(heartGain) heartGain.gain.setTargetAtTime(Math.max(0, level), AC.currentTime, 0.01);
+  }
+
   return {
     buildHum, setHum, setVolume, stepSfx, playGlitchSfx, buildGameAudio, blipSfx, winSfx,
-    buildBreathing, setBreath,
+    buildBreathing, setBreath, buildHeart, setHeart,
     get AC(){ return AC; },
     get humOn(){ return humOn; },
     get gAudioReady(){ return gAudioReady; },

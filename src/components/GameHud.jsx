@@ -8,7 +8,11 @@ export default function GameHud() {
       </div>
       <div className="xh"></div>
       <div className="gh-bottom">
-        <div className="gbat"><span className="osd">TORCH</span><div className="gbar"><div id="gBatFill"></div></div></div>
+        <div className="gbars">
+          <div className="gbat"><span className="osd">TORCH</span><div className="gbar"><div id="gBatFill"></div></div></div>
+          <div className="gbat"><span className="osd">STAMINA</span><div className="gbar"><div id="gStaFill"></div></div></div>
+          <div className="gbat"><span className="osd">NERVE</span><div className="gbar"><div id="gSanFill"></div></div></div>
+        </div>
         <span className="osd" id="gHint"></span>
       </div>
     </div>
