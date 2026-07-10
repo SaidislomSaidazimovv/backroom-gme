@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useBackroomsEngine } from "./hooks/useBackroomsEngine.js";
 import GameMenu from "./components/GameMenu.jsx";
+import PauseMenu from "./components/PauseMenu.jsx";
 import VhsOverlays from "./components/VhsOverlays.jsx";
 import WrongLevel from "./components/WrongLevel.jsx";
 import GameHud from "./components/GameHud.jsx";
@@ -19,6 +20,14 @@ import Footer from "./components/content/Footer.jsx";
 export default function App() {
   useBackroomsEngine();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
+
+  // The engine owns the paused state (Esc); it notifies us via this event.
+  useEffect(() => {
+    const onPause = (e) => setPaused(!!e.detail?.paused);
+    addEventListener("backrooms:pausestate", onPause);
+    return () => removeEventListener("backrooms:pausestate", onPause);
+  }, []);
 
   // The "ENTER THE MAZE" button opens this menu instead of starting directly.
   // Menu PLAY closes it and tells the engine to start via a custom event.
@@ -54,6 +63,7 @@ export default function App() {
       <Footer />
 
       <GameMenu open={menuOpen} onClose={() => setMenuOpen(false)} onPlay={startGame} />
+      <PauseMenu open={paused} />
     </>
   );
 }

@@ -275,7 +275,7 @@ function loop(now){
   const t = now/1000;
 
   if(gameMode){
-    updateGame(dt, t);
+    if(!paused) updateGame(dt, t);
   } else {
     /* decide what the walker does */
   if(!reduceMotion){
@@ -398,7 +398,7 @@ __rafId = requestAnimationFrame(loop);
 let gameMode = false, gYaw = 0, gPitch = 0, gBattery = 100, gStart = 0;
 let breath = 0, breathPhase = 0;
 let stamina = 100, exhausted = false, fear = 0, heartPhase = 0;
-let calm = 0, scareT = 8;
+let calm = 0, scareT = 8, paused = false, runBats = 0, runAlmonds = 0;
 const keys = {};
 let exitW = {x:0, z:0}, entW = {x:0, z:0}, bats = [];
 const isTouch = matchMedia("(pointer:coarse)").matches;
@@ -537,7 +537,10 @@ function tryPointerLock(){
     if(r && r.catch) r.catch(()=>{});
   }catch(err){ /* sandboxed context: drag-look takes over */ }
 }
-document.addEventListener("pointerlockchange", ()=>{ plActive = document.pointerLockElement === canvas; });
+document.addEventListener("pointerlockchange", ()=>{
+  plActive = document.pointerLockElement === canvas;
+  if(gameMode && !plActive && !paused) setPausedState(true);   // Esc released the lock → pause
+});
 document.addEventListener("pointerlockerror", ()=>{ plActive = false; });
 addEventListener("mousemove", e=>{
   if(!gameMode) return;
@@ -559,7 +562,7 @@ addEventListener("mousedown", e=>{
 });
 addEventListener("mouseup", ()=>{ dragLook = null; });
 addEventListener("keydown", e=>{
-  if(gameMode && e.code === "Escape" && !document.pointerLockElement) endGame("quit");
+  if(gameMode && e.code === "Escape" && !plActive && !document.pointerLockElement) setPausedState(!paused);
 });
 /* touch: left half = move stick, right half = look */
 let tMove = null, tLook = null;
@@ -618,6 +621,7 @@ function startGame(){
   setTorch(true);
   if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio(); audio.buildBreathing(); audio.buildHeart();
   breathPhase = 0; heartPhase = 0; stamina = 100; exhausted = false; fear = 0; calm = 0; scareT = 8;
+  runBats = 0; runAlmonds = 0; setPausedState(false);
   document.body.classList.add("in-game");
   gameHud.classList.add("on"); gameEnd.classList.remove("on");
   gHint.textContent = isTouch
@@ -642,17 +646,22 @@ function endGame(kind){
   if(kind === "quit"){ exitToSite(); return; }
   const secs = Math.round((performance.now() - gStart)/1000);
   const mm = Math.floor(secs/60), ss = String(secs%60).padStart(2,"0");
+  const stats = `${runBats} CELL${runBats===1?"":"S"} · ${runAlmonds} ALMOND`;
   if(kind === "win"){
     audio.winSfx();
+    let best = 0; try { best = +(localStorage.getItem("backrooms:best") || 0); } catch(e){}
+    let tag;
+    if(!best || secs < best){ try { localStorage.setItem("backrooms:best", secs); } catch(e){} tag = "NEW BEST TIME"; }
+    else { const bm = Math.floor(best/60), bs = String(best%60).padStart(2,"0"); tag = `BEST ${bm}:${bs}`; }
     gEndTitle.textContent = "YOU FOUND THE DOOR";
     gEndTitle.style.color = "var(--wall-bright)"; gEndTitle.style.textShadow = "0 0 26px rgba(232,217,138,.4)";
-    gEndSub.textContent = `ESCAPED LEVEL 0 IN ${mm}:${ss} — NOBODY WILL BELIEVE YOU`;
+    gEndSub.textContent = `ESCAPED IN ${mm}:${ss} — ${tag} · ${stats}`;
   } else {
     audio.playGlitchSfx();
     veil.classList.remove("on"); void veil.offsetWidth; veil.classList.add("on");
     gEndTitle.textContent = "IT FOUND YOU";
     gEndTitle.style.color = "var(--blood)"; gEndTitle.style.textShadow = "0 0 30px rgba(255,42,31,.5)";
-    gEndSub.textContent = `SIGNAL LOST AFTER ${mm}:${ss} — THE TAPE KEEPS RECORDING`;
+    gEndSub.textContent = `SIGNAL LOST AFTER ${mm}:${ss} · ${stats}`;
   }
   gameEnd.classList.add("on");
 }
@@ -668,6 +677,15 @@ addEventListener("backrooms:start", startGame);
 document.getElementById("gRetry").addEventListener("click", startGame);
 document.getElementById("gReturn").addEventListener("click", exitToSite);
 document.getElementById("gQuit").addEventListener("click", ()=> endGame("quit"));
+
+/* --- pause (Esc). React renders the overlay from the pausestate event. --- */
+function setPausedState(v){
+  paused = v;
+  if(v && document.pointerLockElement) document.exitPointerLock();
+  dispatchEvent(new CustomEvent("backrooms:pausestate", { detail: { paused: v } }));
+}
+addEventListener("backrooms:resume", ()=> setPausedState(false));
+addEventListener("backrooms:quit", ()=> { setPausedState(false); endGame("quit"); });
 
 /* --- per-frame game logic --- */
 function updateGame(dt, t){
@@ -727,7 +745,7 @@ function updateGame(dt, t){
     b.m.rotation.y = t*1.4;
     if(Math.hypot(b.x - px, b.z - pz) < 1.1){
       b.taken = true; b.m.visible = false;
-      gBattery = Math.min(100, gBattery + 35);
+      gBattery = Math.min(100, gBattery + 35); runBats++;
       if(!torchOn) setTorch(true);
       audio.blipSfx();
     }
@@ -738,7 +756,7 @@ function updateGame(dt, t){
     a.m.rotation.y = t*0.8;
     if(Math.hypot(a.x - px, a.z - pz) < 1.1){
       a.taken = true; a.m.visible = false;
-      fear = Math.max(0, fear - 40); calm = 6; stamina = Math.min(100, stamina + 30);
+      fear = Math.max(0, fear - 40); calm = 6; stamina = Math.min(100, stamina + 30); runAlmonds++;
       audio.blipSfx();
     }
   }
