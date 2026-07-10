@@ -6,6 +6,7 @@ export default function VhsOverlays() {
       <canvas className="vhs-noise" id="noise"></canvas>
       <div className="vhs-flick" id="flick"></div>
       <div className="tracking-bar" id="track"></div>
+      <div className="fear-vig" id="fearVig"></div>
       <div id="glitchveil"></div>
     </>
   );

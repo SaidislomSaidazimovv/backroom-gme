@@ -397,12 +397,16 @@ __rafId = requestAnimationFrame(loop);
 /* ================= GAME — PLAYABLE LEVEL 0 ================= */
 let gameMode = false, gYaw = 0, gPitch = 0, gBattery = 100, gStart = 0;
 let breath = 0, breathPhase = 0;
+let stamina = 100, exhausted = false, fear = 0, heartPhase = 0;
 const keys = {};
 let exitW = {x:0, z:0}, entW = {x:0, z:0}, bats = [];
 const isTouch = matchMedia("(pointer:coarse)").matches;
 const gameHud = document.getElementById("gameHud");
 const gTime = document.getElementById("gTime");
 const gBatFill = document.getElementById("gBatFill");
+const gStaFill = document.getElementById("gStaFill");
+const gSanFill = document.getElementById("gSanFill");
+const fearVig = document.getElementById("fearVig");
 const gHint = document.getElementById("gHint");
 const gameEnd = document.getElementById("gameEnd");
 const gEndTitle = document.getElementById("gEndTitle");
@@ -596,7 +600,8 @@ function startGame(){
   }
   exitG.visible = entG.visible = true;
   setTorch(true);
-  if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio(); audio.buildBreathing(); breathPhase = 0;
+  if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio(); audio.buildBreathing(); audio.buildHeart();
+  breathPhase = 0; heartPhase = 0; stamina = 100; exhausted = false; fear = 0;
   document.body.classList.add("in-game");
   gameHud.classList.add("on"); gameEnd.classList.remove("on");
   gHint.textContent = isTouch
@@ -611,7 +616,8 @@ function endGame(kind){
   gameMode = false;
   if(document.pointerLockElement) document.exitPointerLock();
   if(audio.whineGain){ audio.whineGain.gain.value = 0; audio.droneGain.gain.value = 0; }
-  audio.setBreath(0);
+  audio.setBreath(0); audio.setHeart(0);
+  fear = 0; fearVig.style.opacity = 0;
   noiseEl.style.opacity = .06;
   gameHud.classList.remove("on");
   // hand the camera back to the wandering walker
@@ -657,8 +663,19 @@ function updateGame(dt, t){
   if(tMove){ ix += tMove.dx; iz += -tMove.dy; }
   let len = Math.hypot(ix, iz);
   if(len > 1){ ix /= len; iz /= len; len = 1; }
-  const run = keys["ShiftLeft"]||keys["ShiftRight"];
+  const wantRun = keys["ShiftLeft"]||keys["ShiftRight"];
+  const moving = len > 0.05;
+  if(wantRun && moving && !exhausted && stamina > 0){
+    stamina = Math.max(0, stamina - dt*(100/7));
+    if(stamina === 0) exhausted = true;                 // must recover before sprinting again
+  } else {
+    stamina = Math.min(100, stamina + dt*(100/12));
+    if(exhausted && stamina > 30) exhausted = false;
+  }
+  const run = wantRun && moving && !exhausted && stamina > 0;
   const spd = (run ? 3.5 : 2.1) * len;
+  gStaFill.style.width = stamina + "%";
+  gStaFill.style.background = exhausted ? "var(--blood)" : "#7fd7ff";
   const fwdX = -Math.sin(gYaw), fwdZ = -Math.cos(gYaw);
   const rgtX =  Math.cos(gYaw), rgtZ = -Math.sin(gYaw);
   const vx = (fwdX*iz + rgtX*ix) * spd, vz = (fwdZ*iz + rgtZ*ix) * spd;
@@ -730,14 +747,28 @@ function updateGame(dt, t){
 
   /* dread + guidance audio */
   const prox = Math.max(0, (16 - ed)/16);
-  noiseEl.style.opacity = .06 + prox*0.28;
+  /* sanity / fear — rises near the entity, when it is in view, and in the dark */
+  const seesEnt = ed < 15 && lookOff < 0.5;
+  const fearTarget = Math.min(100, prox*85 + (seesEnt ? 22 : 0) + (torchOn ? 0 : 22));
+  fear += (fearTarget - fear) * Math.min(1, dt * (fearTarget > fear ? 2.2 : 0.9));
+  const fear01 = fear / 100;
+  gSanFill.style.width = (100 - fear) + "%";
+  gSanFill.style.background = fear > 70 ? "var(--blood)" : fear > 40 ? "#e8c44a" : "var(--wall-bright)";
+  fearVig.style.opacity = fear01 * 0.72;
+  noiseEl.style.opacity = .06 + prox*0.28 + fear01*0.14;
+  if(fear > 55){ const sh = (fear-55)/45 * 0.006; camera.rotation.x += (Math.random()-.5)*sh; camera.rotation.z += (Math.random()-.5)*sh; }
   /* breathing — heavier when running, low on battery, or the entity is close */
   const running = (keys["ShiftLeft"]||keys["ShiftRight"]) && (Math.abs(ix)+Math.abs(iz) > 0.05);
-  const exert = (running ? 1 : 0.3) + (gBattery < 25 ? 0.3 : 0) + prox*0.6;
+  const exert = (running ? 1 : 0.3) + (gBattery < 25 ? 0.3 : 0) + prox*0.6 + fear01*0.4;
   breathPhase += dt * (0.55 + exert*0.9);
   const be = Math.max(0, Math.sin(breathPhase*Math.PI*2));
   breath = be*be;
   audio.setBreath(breath * (0.02 + exert*0.045));
+  /* heartbeat — a lub-dub whose rate + volume climb with fear */
+  heartPhase += dt * (0.8 + fear01*1.7);
+  const lub = Math.pow(Math.max(0, Math.sin(heartPhase*Math.PI*2)), 8);
+  const dub = 0.7 * Math.pow(Math.max(0, Math.sin((heartPhase-0.13)*Math.PI*2)), 8);
+  audio.setHeart((lub + dub) * fear01 * 0.5);
   if(audio.gAudioReady){
     const vol = audio.humOn ? 1 : 0;
     audio.whineGain.gain.value = vol * Math.max(0, (46 - exD)/46) * 0.06;

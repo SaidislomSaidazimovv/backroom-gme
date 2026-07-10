@@ -30,6 +30,8 @@ body{
   background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%)}
 .vhs-noise{position:fixed;inset:0;z-index:42;pointer-events:none;opacity:.06}
 .vhs-flick{position:fixed;inset:0;z-index:43;pointer-events:none;background:#fff8dd;opacity:0;transition:opacity .05s}
+.fear-vig{position:fixed;inset:0;z-index:45;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:radial-gradient(ellipse at center,transparent 38%,rgba(120,0,0,.4) 100%)}
 .tracking-bar{position:fixed;left:0;width:100%;height:90px;z-index:44;pointer-events:none;opacity:0;
   background:linear-gradient(180deg,transparent,rgba(255,255,255,.13) 45%,rgba(160,160,160,.28) 50%,rgba(255,255,255,.13) 55%,transparent);
   filter:blur(1px)}
@@ -215,6 +217,9 @@ body.in-game main,body.in-game footer,body.in-game #cursor,body.in-game #battery
 .gbat{display:flex;align-items:center;gap:12px}
 .gbar{width:clamp(110px,16vw,200px);height:12px;border:1px solid rgba(233,230,220,.5);padding:2px}
 #gBatFill{height:100%;width:100%;background:var(--wall-bright);transition:width .3s linear,background .3s}
+.gbars{display:flex;flex-direction:column;gap:8px}
+#gStaFill{height:100%;width:100%;background:#7fd7ff;transition:width .15s linear,background .3s}
+#gSanFill{height:100%;width:100%;background:var(--wall-bright);transition:width .2s linear,background .3s}
 #gHint{max-width:52ch;text-align:right;transition:opacity 1.2s;color:var(--dim)}
 #gQuit{pointer-events:auto;background:none;border:1px solid rgba(233,230,220,.4);
   padding:5px 14px 3px;color:var(--osd);cursor:none;font-size:inherit;letter-spacing:inherit}
