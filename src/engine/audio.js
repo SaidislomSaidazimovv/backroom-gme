@@ -142,9 +142,23 @@ export function createAudio() {
     if(heartGain) heartGain.gain.setTargetAtTime(Math.max(0, level), AC.currentTime, 0.01);
   }
 
+  /* --- a brief, band-passed "whisper" from a random direction (ambient scare) --- */
+  function whisper(){
+    if(!AC) return;
+    const len = Math.floor(AC.sampleRate*0.6), buf = AC.createBuffer(1,len,AC.sampleRate), ch = buf.getChannelData(0);
+    for(let i=0;i<len;i++){ const env = Math.sin(Math.PI*i/len); ch[i] = (Math.random()*2-1)*env*env; }
+    const src = AC.createBufferSource(); src.buffer = buf;
+    const bp = AC.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value = 1100 + Math.random()*700; bp.Q.value = 3.5;
+    const g = AC.createGain(); g.gain.value = 0.055;
+    const pan = AC.createStereoPanner ? AC.createStereoPanner() : null;
+    if(pan){ pan.pan.value = Math.random()*2-1; src.connect(bp).connect(g).connect(pan).connect(master); }
+    else src.connect(bp).connect(g).connect(master);
+    src.start();
+  }
+
   return {
     buildHum, setHum, setVolume, stepSfx, playGlitchSfx, buildGameAudio, blipSfx, winSfx,
-    buildBreathing, setBreath, buildHeart, setHeart,
+    buildBreathing, setBreath, buildHeart, setHeart, whisper,
     get AC(){ return AC; },
     get humOn(){ return humOn; },
     get gAudioReady(){ return gAudioReady; },

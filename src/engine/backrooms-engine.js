@@ -398,6 +398,7 @@ __rafId = requestAnimationFrame(loop);
 let gameMode = false, gYaw = 0, gPitch = 0, gBattery = 100, gStart = 0;
 let breath = 0, breathPhase = 0;
 let stamina = 100, exhausted = false, fear = 0, heartPhase = 0;
+let calm = 0, scareT = 8;
 const keys = {};
 let exitW = {x:0, z:0}, entW = {x:0, z:0}, bats = [];
 const isTouch = matchMedia("(pointer:coarse)").matches;
@@ -513,6 +514,15 @@ for(let i=0;i<6;i++){
   bats.push({m, x:0, z:0, taken:true});
 }
 
+/* --- almond water pickups (calm your nerve) --- */
+const almondMat = new THREE.MeshBasicMaterial({ color: 0xf3efce });
+const almonds = [];
+for(let i=0;i<4;i++){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.2, 8), almondMat);
+  m.visible = false; scene.add(m);
+  almonds.push({ m, x:0, z:0, taken:true });
+}
+
 /* --- input --- */
 addEventListener("keydown", e=>{
   keys[e.code] = true;
@@ -598,10 +608,16 @@ function startGame(){
     b.x = c.x + (Math.random()-.5)*2; b.z = c.z + (Math.random()-.5)*2;
     b.taken = false; b.m.visible = true;
   }
+  for(const a of almonds){
+    const ang = Math.random()*Math.PI*2, d = 16 + Math.random()*38;
+    const c = openCellNear(px - Math.sin(ang)*d, pz - Math.cos(ang)*d);
+    a.x = c.x + (Math.random()-.5)*2; a.z = c.z + (Math.random()-.5)*2;
+    a.taken = false; a.m.visible = true;
+  }
   exitG.visible = entG.visible = true;
   setTorch(true);
   if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio(); audio.buildBreathing(); audio.buildHeart();
-  breathPhase = 0; heartPhase = 0; stamina = 100; exhausted = false; fear = 0;
+  breathPhase = 0; heartPhase = 0; stamina = 100; exhausted = false; fear = 0; calm = 0; scareT = 8;
   document.body.classList.add("in-game");
   gameHud.classList.add("on"); gameEnd.classList.remove("on");
   gHint.textContent = isTouch
@@ -644,6 +660,7 @@ function exitToSite(){
   gameEnd.classList.remove("on");
   exitG.visible = entG.visible = false;
   for(const b of bats) b.m.visible = false;
+  for(const a of almonds) a.m.visible = false;
   document.body.classList.remove("in-game");
 }
 // ENTER THE MAZE (#startGame) opens the React pre-game menu; its PLAY dispatches this.
@@ -715,6 +732,16 @@ function updateGame(dt, t){
       audio.blipSfx();
     }
   }
+  for(const a of almonds){
+    if(a.taken) continue;
+    a.m.position.set(a.x - px, 0.5 + Math.sin(t*1.6 + a.x)*0.05, a.z - pz);
+    a.m.rotation.y = t*0.8;
+    if(Math.hypot(a.x - px, a.z - pz) < 1.1){
+      a.taken = true; a.m.visible = false;
+      fear = Math.max(0, fear - 40); calm = 6; stamina = Math.min(100, stamina + 30);
+      audio.blipSfx();
+    }
+  }
 
   /* exit door */
   const exDx = exitW.x - px, exDz = exitW.z - pz;
@@ -749,7 +776,8 @@ function updateGame(dt, t){
   const prox = Math.max(0, (16 - ed)/16);
   /* sanity / fear — rises near the entity, when it is in view, and in the dark */
   const seesEnt = ed < 15 && lookOff < 0.5;
-  const fearTarget = Math.min(100, prox*85 + (seesEnt ? 22 : 0) + (torchOn ? 0 : 22));
+  if(calm > 0) calm -= dt;                                  // almond water briefly steadies you
+  const fearTarget = Math.min(100, (prox*85 + (seesEnt ? 22 : 0) + (torchOn ? 0 : 22)) * (calm > 0 ? 0.45 : 1));
   fear += (fearTarget - fear) * Math.min(1, dt * (fearTarget > fear ? 2.2 : 0.9));
   const fear01 = fear / 100;
   gSanFill.style.width = (100 - fear) + "%";
@@ -778,6 +806,10 @@ function updateGame(dt, t){
     }
     audio.droneGain.gain.value = vol * prox * 0.1;
   }
+
+  /* ambient scares — a whisper from the dark + a jolt of unease */
+  scareT -= dt;
+  if(scareT <= 0){ scareT = 9 + Math.random()*13; audio.whisper(); fear = Math.min(100, fear + 10); }
 
   /* clock */
   const secs = Math.floor((performance.now() - gStart)/1000);
