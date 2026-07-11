@@ -40,12 +40,33 @@ src/
 │   └── content/{Hero,Level0,Tapes,Entity,Noclip,PlaySec,Footer}
 └── engine/                   Framework-agnostic engine
     ├── backrooms-engine.js   3D simulation core (renderer, world, walker, game, loop)
+    ├── models.js             First-person arm + flashlight, and the entity (+ rig loader)
+    ├── settings.js           Reactive settings store (menu ⇄ engine), localStorage
     ├── textures.js           Procedural wall/carpet/ceiling maps
-    ├── audio.js              Web Audio (hum, footsteps, exit whine, drone, sfx)
+    ├── audio.js              Web Audio (hum, steps, whine, drone, breathing, heartbeat)
     ├── vhs.js                Noise canvas + tracking-bar sweep
     ├── osd.js                Battery / VHS clock / tape counter
     └── ui.js                 Loader gate, cursor, scroll reveals, whisper
+public/models/entity.glb      The rigged entity (see Models below)
 ```
+
+## Models
+
+- **The arm + flashlight** is built procedurally in `models.js`: organic capsule
+  geometry with real finger joints, plus canvas-generated skin / metal PBR maps
+  (albedo + bump). It bobs with your gait and sways as you breathe.
+- **The entity** is a rigged human (`public/models/entity.glb` — `Soldier.glb`
+  from the [three.js examples](https://github.com/mrdoob/three.js), Mixamo rig),
+  loaded with `GLTFLoader`. Its materials are overridden with a dark, damp flesh
+  shader so it reads as a gaunt humanoid rather than a soldier, it's stretched
+  tall and thin, and its **Idle / Walk / Run** clips are blended by how it's
+  hunting you — frozen in your beam it plays *Idle*, stalking from afar *Walk*,
+  closing in *Run*. The glowing grin + eyes are pinned to its head bone.
+
+**Swapping the entity model:** drop any rigged `.glb` at `public/models/entity.glb`.
+It works best with a Mixamo-style rig (a `mixamorigHead` bone and clips named
+`Idle`, `Walk`, `Run`). If the file is missing or fails to load, the engine falls
+back to a fully procedural entity built from capsules — the game still runs.
 
 The React components render the exact DOM `id`/`class` contract the engine binds
 to; the engine wires all behavior imperatively via those ids. Keep them in sync.

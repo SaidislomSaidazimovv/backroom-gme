@@ -5,6 +5,7 @@ import { startUi } from "./ui.js";
 import { makeTex, createWorldTextures } from "./textures.js";
 import { createAudio } from "./audio.js";
 import { settings, SKINS, DIFFICULTIES, QUALITY } from "./settings.js";
+import { createViewmodel, createSmiler, loadEntityRig } from "./models.js";
 
 /**
  * THE BACKROOMS engine — ported verbatim from the original single-file
@@ -76,30 +77,8 @@ scene.add(fill);
 
 /* --- first-person arm + flashlight viewmodel (what "you" are holding) --- */
 scene.add(camera); // parent the viewmodel to the camera so it renders in-view
-const viewmodel = new THREE.Group();
-const vmSkinMat = new THREE.MeshStandardMaterial({ color: 0x9c6f50, roughness: 0.85 });      // hand
-const vmSleeveMat = new THREE.MeshStandardMaterial({ color: 0x23252b, roughness: 0.95 });     // jacket cuff
-const vmMetalMat = new THREE.MeshStandardMaterial({ color: 0x111114, roughness: 0.5, metalness: 0.7 }); // torch
-const vmLensMat = new THREE.MeshBasicMaterial({ color: 0xffe2ae, side: THREE.DoubleSide });
-const vmSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.08, 0.42, 10), vmSleeveMat);
-vmSleeve.rotation.x = Math.PI / 2 * 0.86; vmSleeve.position.set(0.03, -0.07, 0.17); viewmodel.add(vmSleeve);
-const vmHand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.075, 0.12), vmSkinMat);
-vmHand.position.set(0.0, 0.0, -0.10); viewmodel.add(vmHand);
-[-0.032, 0.0, 0.032].forEach((fx) => {                                        // knuckles gripping the torch
-  const f = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.045, 0.055), vmSkinMat);
-  f.position.set(fx, 0.05, -0.12); viewmodel.add(f);
-});
-const vmBody = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.033, 0.24, 14), vmMetalMat);
-vmBody.rotation.x = Math.PI / 2; vmBody.position.set(0.0, 0.03, -0.24); viewmodel.add(vmBody);
-const vmHead = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.033, 0.07, 14), vmMetalMat);
-vmHead.rotation.x = Math.PI / 2; vmHead.position.set(0.0, 0.03, -0.38); viewmodel.add(vmHead);
-const vmLens = new THREE.Mesh(new THREE.CircleGeometry(0.048, 18), vmLensMat);
-vmLens.rotation.y = Math.PI; vmLens.position.set(0.0, 0.03, -0.415); viewmodel.add(vmLens);
-const vmLight = new THREE.PointLight(0xffe2ae, 0.55, 1.5, 2.2);                 // dim spill so the hand is visible
-vmLight.position.set(0.0, 0.06, -0.18); viewmodel.add(vmLight);
-viewmodel.position.set(0.33, -0.30, -0.5);
-viewmodel.rotation.set(0.05, -0.16, 0.05);
-viewmodel.visible = false;                                                     // only shown in game mode
+const vm = createViewmodel(tex);
+const viewmodel = vm.group, vmLens = vm.lens, vmLight = vm.light;
 camera.add(viewmodel);
 
 /* --- geometry --- */
@@ -398,7 +377,7 @@ __rafId = requestAnimationFrame(loop);
 let gameMode = false, gYaw = 0, gPitch = 0, gBattery = 100, gStart = 0;
 let breath = 0, breathPhase = 0;
 let stamina = 100, exhausted = false, fear = 0, heartPhase = 0;
-let calm = 0, scareT = 8, paused = false, runBats = 0, runAlmonds = 0;
+let calm = 0, scareT = 8, paused = false, runBats = 0, runAlmonds = 0, entWalk = 0;
 const keys = {};
 let exitW = {x:0, z:0}, entW = {x:0, z:0}, bats = [];
 const isTouch = matchMedia("(pointer:coarse)").matches;
@@ -453,58 +432,30 @@ exitLight.position.set(0, 1.6, 0.5); exitG.add(exitLight);
 exitG.traverse(o=>{ if(o.isMesh && o.material === jambMat) o.castShadow = true; });
 exitG.visible = false; scene.add(exitG);
 
-/* --- the entity: a "Smiler" — a tall, gaunt, near-black form. In the dark you
-   see only its glowing grin and eyes; the torch reveals the body (and freezes
-   it). Its local +z faces the player (see the rotation in updateGame). --- */
-const entG = new THREE.Group();
-const entDark = new THREE.MeshStandardMaterial({ color: 0x060606, roughness: 1, metalness: 0 });
-[[-0.11], [0.12]].forEach(([lx], i) => {                                   // long legs
-  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.045, 1.3, 6), entDark);
-  leg.position.set(lx, 0.64, 0); leg.rotation.x = i ? 0.05 : -0.04; entG.add(leg);
+/* --- the entity: a walking "Smiler" (organic model + gait, see models.js) --- */
+const smiler = createSmiler(tex);
+const entG = smiler.group;
+const entGrinMat = smiler.grinMat, entEyeMat = smiler.eyeMat;
+scene.add(entG);
+
+/* Upgrade the entity to the real rigged human once /models/entity.glb loads.
+   The procedural body above is the fallback if it never does. */
+let entMixer = null, entActions = null, entHeadBone = null, entRigged = false;
+const _headPos = new THREE.Vector3();
+loadEntityRig("/models/entity.glb", smiler.flesh).then((rig) => {
+  if (!rig) return;
+  entG.traverse(o => { if (o.isMesh && !o.userData.glow) o.visible = false; });  // retire the placeholder
+  rig.root.rotation.y = Math.PI;               // the rig walks down -z; entG's +z faces the player
+  entG.add(rig.root);
+  entG.add(smiler.face);                       // re-parent the glow off the procedural head
+  smiler.face.scale.setScalar(0.85);
+  entMixer = rig.mixer; entActions = rig.actions; entHeadBone = rig.headBone; entRigged = true;
 });
-const entPelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.14, 0.34, 7), entDark);
-entPelvis.position.y = 1.34; entG.add(entPelvis);
-const entTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.21, 1.05, 7), entDark);
-entTorso.position.set(0, 1.98, 0.03); entTorso.rotation.x = -0.06; entG.add(entTorso);      // slight hunch
-const entShldr = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.11, 0.16), entDark);
-entShldr.position.set(0, 2.44, 0.02); entG.add(entShldr);
-[[-1], [1]].forEach(([s]) => {                                             // unnaturally long arms
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.028, 1.55, 6), entDark);
-  arm.position.set(s * 0.26, 1.68, 0.05); arm.rotation.z = s * 0.05; entG.add(arm);
-});
-const entNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.16, 6), entDark);
-entNeck.position.y = 2.54; entG.add(entNeck);
-const entHead = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), entDark);
-entHead.scale.set(1, 1.15, 0.92); entHead.position.y = 2.7; entG.add(entHead);
-// the grin — a canvas "skin"; jagged teeth crescent that glows in the black
-const smilerGrin = tex((g, w, h) => {
-  g.clearRect(0, 0, w, h);
-  g.fillStyle = "#eff0e2";
-  g.beginPath();
-  g.moveTo(w * 0.08, h * 0.32);
-  g.quadraticCurveTo(w * 0.5, h * 0.24, w * 0.92, h * 0.32);
-  g.quadraticCurveTo(w * 0.5, h * 0.98, w * 0.08, h * 0.32);
-  g.closePath(); g.fill();
-  g.strokeStyle = "rgba(5,5,4,0.92)"; g.lineWidth = Math.max(2, w * 0.012);
-  const n = 15;
-  for (let i = 1; i < n; i++) { const x = w * (0.1 + 0.8 * i / n); g.beginPath(); g.moveTo(x, h * 0.28); g.lineTo(x, h * 0.95); g.stroke(); }
-  g.fillStyle = "rgba(5,5,4,0.92)";
-  for (let i = 0; i < n; i++) {
-    const x0 = w * (0.1 + 0.8 * i / n), x1 = w * (0.1 + 0.8 * (i + 1) / n), mid = (x0 + x1) / 2;
-    g.beginPath(); g.moveTo(x0, h * 0.9); g.lineTo(x1, h * 0.9); g.lineTo(mid, h * 0.66); g.closePath(); g.fill();
-  }
-}, 256, 128);
-const entGrinMat = new THREE.MeshBasicMaterial({ map: smilerGrin, transparent: true, side: THREE.DoubleSide });
-const entGrin = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.16), entGrinMat);
-entGrin.position.set(0, 2.63, 0.155); entGrin.userData.glow = true; entG.add(entGrin);
-const entEyeMat = new THREE.MeshBasicMaterial({ color: 0xf7f4e2, transparent: true });
-[[-0.07], [0.07]].forEach(([ex]) => {
-  const eye = new THREE.Mesh(new THREE.CircleGeometry(0.022, 12), entEyeMat);
-  eye.position.set(ex, 2.78, 0.16); eye.userData.glow = true; entG.add(eye);
-});
-entG.scale.setScalar(1.05);
-entG.traverse(o => { if (o.isMesh) o.castShadow = !o.userData.glow; });
-entG.visible = false; scene.add(entG);
+function fadeAction(a, want, dt){
+  if(!a) return;
+  const w = a.getEffectiveWeight();
+  a.setEffectiveWeight(w + (want - w) * Math.min(1, dt * 6));
+}
 
 /* --- battery pickups --- */
 const batMat = new THREE.MeshBasicMaterial({color:0x38c874});
@@ -783,8 +734,36 @@ function updateGame(dt, t){
     const rc = openCellNear(px - Math.sin(ra)*42, pz - Math.cos(ra)*42);
     entW = {x:rc.x, z:rc.z};
   }
-  entG.position.set(entW.x - px, lit ? Math.sin(t*40)*0.008 : 0, entW.z - pz);
-  entG.rotation.y = Math.atan2(px - entW.x, pz - entW.z);
+  /* gait — the rigged human plays real clips; the fallback swings its joints */
+  if(entRigged){
+    entMixer.update(dt);
+    fadeAction(entActions.idle, lit ? 1 : 0, dt);                  // frozen in the beam
+    fadeAction(entActions.walk, (!lit && ed >= 26) ? 1 : 0, dt);   // stalking from a distance
+    fadeAction(entActions.run,  (!lit && ed <  26) ? 1 : 0, dt);   // closing on you
+    entG.position.set(entW.x - px, lit ? Math.sin(t*40)*0.006 : 0, entW.z - pz);
+    entG.rotation.y = Math.atan2(px - entW.x, pz - entW.z);
+    if(entHeadBone){                                               // keep the glow on its head
+      entG.updateMatrixWorld(true);
+      entHeadBone.getWorldPosition(_headPos);
+      entG.worldToLocal(_headPos);
+      smiler.face.position.copy(_headPos);
+    }
+  } else {
+    entWalk += eSpd * dt * 2.6;
+    const sw = Math.sin(entWalk), swAbs = Math.abs(sw);
+    smiler.legs[0].hip.rotation.x = sw * 0.55;
+    smiler.legs[1].hip.rotation.x = -sw * 0.55;
+    smiler.legs[0].knee.rotation.x = Math.max(0, -sw) * 0.8;
+    smiler.legs[1].knee.rotation.x = Math.max(0, sw) * 0.8;
+    smiler.arms[0].sh.rotation.x = -sw * 0.34;
+    smiler.arms[1].sh.rotation.x = sw * 0.34;
+    smiler.arms[0].elbow.rotation.x = 0.22 + swAbs * 0.18;
+    smiler.arms[1].elbow.rotation.x = 0.22 + swAbs * 0.18;
+    smiler.torso.rotation.z = sw * 0.045;
+    smiler.head.rotation.z = -sw * 0.05;
+    entG.position.set(entW.x - px, (lit ? Math.sin(t*40)*0.008 : 0) + swAbs*0.022, entW.z - pz);
+    entG.rotation.y = Math.atan2(px - entW.x, pz - entW.z);
+  }
   const glow = 0.6 + 0.4 * Math.abs(Math.sin(t * 3)) + (ed < 8 ? 0.2 : 0);   // grin/eyes flicker, steadier up close
   entGrinMat.opacity = Math.min(1, glow);
   entEyeMat.opacity = Math.min(1, glow * (0.8 + Math.abs(Math.sin(t * 11)) * 0.2));
