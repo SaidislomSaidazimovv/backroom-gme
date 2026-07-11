@@ -142,6 +142,36 @@ export function createAudio() {
     if(heartGain) heartGain.gain.setTargetAtTime(Math.max(0, level), AC.currentTime, 0.01);
   }
 
+  /* --- the entity's scream: a harsh noise burst swept through a band-pass, over a
+     wailing saw tone that rises then collapses. Played when it spots you. --- */
+  function scream(){
+    if(!AC) return;
+    const now = AC.currentTime;
+    const len = Math.floor(AC.sampleRate * 1.15), buf = AC.createBuffer(1, len, AC.sampleRate), ch = buf.getChannelData(0);
+    for(let i=0;i<len;i++){
+      const p = i/len, env = Math.pow(1-p, 0.55) * Math.min(1, p*24);
+      ch[i] = (Math.random()*2-1) * env;
+    }
+    const src = AC.createBufferSource(); src.buffer = buf;
+    const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.3;
+    bp.frequency.setValueAtTime(300, now);
+    bp.frequency.exponentialRampToValueAtTime(1900, now + 0.32);
+    bp.frequency.exponentialRampToValueAtTime(400, now + 1.05);
+    const ng = AC.createGain(); ng.gain.value = 0.2;
+    src.connect(bp).connect(ng).connect(master); src.start(now);
+
+    const o = AC.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(135, now);
+    o.frequency.exponentialRampToValueAtTime(540, now + 0.28);
+    o.frequency.exponentialRampToValueAtTime(85, now + 1.1);
+    const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400;
+    const og = AC.createGain();
+    og.gain.setValueAtTime(0.0001, now);
+    og.gain.exponentialRampToValueAtTime(0.15, now + 0.06);
+    og.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+    o.connect(lp).connect(og).connect(master); o.start(now); o.stop(now + 1.25);
+  }
+
   /* --- a brief, band-passed "whisper" from a random direction (ambient scare) --- */
   function whisper(){
     if(!AC) return;
@@ -158,7 +188,7 @@ export function createAudio() {
 
   return {
     buildHum, setHum, setVolume, stepSfx, playGlitchSfx, buildGameAudio, blipSfx, winSfx,
-    buildBreathing, setBreath, buildHeart, setHeart, whisper,
+    buildBreathing, setBreath, buildHeart, setHeart, whisper, scream,
     get AC(){ return AC; },
     get humOn(){ return humOn; },
     get gAudioReady(){ return gAudioReady; },

@@ -47,6 +47,9 @@ body{
   animation:blinkdot 1.1s steps(2) infinite}
 @keyframes blinkdot{50%{opacity:0}}
 @media(hover:none){body{cursor:auto}#cursor{display:none}}
+/* in-game the crosshair replaces the cursor — but bring it back for the full-screen
+   overlays that have buttons (the end screen, the pause menu) */
+@media(hover:hover){body.in-game.show-cursor #cursor{display:block}}
 
 /* ============ OSD CHROME ============ */
 .osd{font-family:'VT323',monospace;font-size:clamp(17px,1.6vw,22px);letter-spacing:.06em;

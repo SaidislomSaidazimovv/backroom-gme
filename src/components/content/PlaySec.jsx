@@ -8,7 +8,7 @@ export default function PlaySec({ onEnter }) {
         keep the beam on whatever moves, and do not stop walking. If you want to try it yourself —
         <em>press play.</em></p>
       <button id="startGame" className="rv d3" onClick={onEnter}>► PLAY — ENTER THE MAZE</button>
-      <div className="warn rv d3">WASD MOVE · MOUSE LOOK · SHIFT RUN · F TORCH · LIGHT FREEZES IT</div>
+      <div className="warn rv d3">WASD MOVE · MOUSE LOOK · SHIFT RUN · F TORCH · IF IT SCREAMS, RUN</div>
     </section>
   );
 }

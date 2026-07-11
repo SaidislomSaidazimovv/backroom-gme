@@ -112,7 +112,7 @@ export default function GameMenu({ open, onClose, onPlay }) {
               <div className="gm-row">
                 <span className="lbl">FOG DENSITY</span>
                 <div className="gm-ctrl">
-                  <input type="range" className="gm-slider" min="0.02" max="0.16" step="0.004" value={s.fog} onChange={(e) => set({ fog: +e.target.value })} />
+                  <input type="range" className="gm-slider" min="0.005" max="0.09" step="0.002" value={s.fog} onChange={(e) => set({ fog: +e.target.value })} />
                   <span className="gm-val">{Math.round(s.fog * 1000)}</span>
                 </div>
               </div>

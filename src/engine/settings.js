@@ -25,7 +25,7 @@ export const QUALITY = {
   high:   { name: "HIGH",   ratio: 1.5,  shadowMap: 1024 },
 };
 
-const KEY = "backrooms:settings";
+const KEY = "backrooms:settings:v2";   // v2: Level 0 is lit now, so the fog default changed
 const defaults = {
   sens: 1,          // mouse sensitivity multiplier (0.3 – 2.5)
   invertY: false,   // invert vertical look
@@ -34,7 +34,7 @@ const defaults = {
   quality: "high",
   shadows: true,
   vhs: true,        // VHS overlays (scanlines / noise / vignette)
-  fog: 0.088,       // fog density
+  fog: 0.03,        // fog density (the level is lit — you can see down the halls)
   skin: "archivist",
 };
 

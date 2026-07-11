@@ -39,16 +39,40 @@ src/
 │   ├── VhsOverlays, WrongLevel, GameHud, GameEnd, Cursor, Loader, Chrome
 │   └── content/{Hero,Level0,Tapes,Entity,Noclip,PlaySec,Footer}
 └── engine/                   Framework-agnostic engine
-    ├── backrooms-engine.js   3D simulation core (renderer, world, walker, game, loop)
+    ├── backrooms-engine.js   Simulation core (renderer, walker, game loop, entity AI)
+    ├── world.js              Level 0 itself — wall maze, drop ceiling, fluorescents
     ├── models.js             First-person arm + flashlight, and the entity (+ rig loader)
     ├── settings.js           Reactive settings store (menu ⇄ engine), localStorage
-    ├── textures.js           Procedural wall/carpet/ceiling maps
-    ├── audio.js              Web Audio (hum, steps, whine, drone, breathing, heartbeat)
+    ├── textures.js           Wallpaper / carpet / ceiling maps
+    ├── audio.js              Web Audio (hum, steps, whine, breathing, heartbeat, scream)
     ├── vhs.js                Noise canvas + tracking-bar sweep
     ├── osd.js                Battery / VHS clock / tape counter
     └── ui.js                 Loader gate, cursor, scroll reveals, whisper
 public/models/entity.glb      The rigged entity (see Models below)
 ```
+
+## Level 0
+
+`world.js` builds the level to the canon rather than to a convenient pillar field:
+
+- **A maze of walls**, not scattered columns — randomly segmented rooms opening
+  into tight one-cell hallways, punched through with doorways. "The architecture
+  is entirely chaotic … there is absolutely no structural logic to the building."
+- **Mono-yellow wallpaper** with a damask motif, paper seams, water damage and
+  mould, over **damp brown office carpet**, under a **suspended acoustic ceiling**
+  on a T-bar grid.
+- **The lights are on.** Fluorescent troffers are inconsistently placed but lit,
+  buzzing at "maximum hum-buzz" — Level 0 is a *bright*, sickly yellow space, not
+  a dark one. A few tubes are dead or flickering, and rare blocks are the canon
+  **pitch-black hallways** — which is where the torch still earns its keep.
+
+The world is infinite and **deterministic**: every wall, fixture and dead tube is
+a pure function of its grid coordinate, so nothing is ever stored. Walls are drawn
+as `InstancedMesh` pools that are re-addressed whenever you cross a cell, and eight
+real point lights are handed to the nearest live fixtures.
+
+Sources: the [Backrooms Wiki](https://backrooms-wiki.wikidot.com/archived:level-0)
+and the [Kane Pixels wiki](https://kane-pixels-backrooms.fandom.com/wiki/Common_Backrooms).
 
 ## Models
 

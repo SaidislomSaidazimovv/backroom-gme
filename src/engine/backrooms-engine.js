@@ -3,6 +3,7 @@ import { startVhs } from "./vhs.js";
 import { startOsd } from "./osd.js";
 import { startUi } from "./ui.js";
 import { makeTex, createWorldTextures } from "./textures.js";
+import { createLevel, H } from "./world.js";
 import { createAudio } from "./audio.js";
 import { settings, SKINS, DIFFICULTIES, QUALITY } from "./settings.js";
 import { createViewmodel, createSmiler, loadEntityRig } from "./models.js";
@@ -46,10 +47,10 @@ renderer.shadowMap.enabled = !COARSE;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 0.88;   // the level is lit now — do not blow it out
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x050402, 0.088);
-scene.background = new THREE.Color(0x030302);
+scene.fog = new THREE.FogExp2(0x2a2415, 0.030);
+scene.background = new THREE.Color(0x2a2415);
 const camera = new THREE.PerspectiveCamera(74, 1, 0.1, 100);
 camera.rotation.order = "YXZ";
 camera.position.set(0, 1.62, 0);
@@ -58,11 +59,12 @@ camera.position.set(0, 1.62, 0);
 const tex = makeTex(renderer);
 const { wallTex, wallBump, carpetTex, carpetBump, ceilTex, ceilBump } = createWorldTextures(tex);
 
-const S = 7, RANGE = 5, H = 3.1;
-const world = new THREE.Group(); scene.add(world);
+/* --- Level 0 itself: the wall maze, the drop ceiling and its lit fluorescents.
+   The sickly hemisphere bounce lives in world.js alongside the fixtures. --- */
+const level = createLevel(scene, { wallTex, wallBump, carpetTex, carpetBump, ceilTex, ceilBump }, { coarse: COARSE });
+const blockedAt = level.blockedAt, openCellNear = level.openCellNear;
 
-/* --- lighting: near-darkness + handheld flashlight --- */
-scene.add(new THREE.HemisphereLight(0x201a0c, 0x040302, 0.22));
+/* --- the flashlight — still needed for the canon pitch-black stretches --- */
 const torch = new THREE.SpotLight(0xffe2ae, 0, 26, 0.47, 0.45, 1.35);
 torch.castShadow = !COARSE;
 torch.shadow.mapSize.set(1024, 1024);
@@ -81,48 +83,6 @@ const vm = createViewmodel(tex);
 const viewmodel = vm.group, vmLens = vm.lens, vmLight = vm.light;
 camera.add(viewmodel);
 
-/* --- geometry --- */
-carpetTex.repeat.set(24,24); carpetBump.repeat.set(24,24);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(120,120),
-  new THREE.MeshPhongMaterial({map:carpetTex, bumpMap:carpetBump, bumpScale:0.02,
-    shininess:5, specular:0x191408}));
-floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
-ceilTex.repeat.set(24,24); ceilBump.repeat.set(24,24);
-const ceil = new THREE.Mesh(new THREE.PlaneGeometry(120,120),
-  new THREE.MeshPhongMaterial({map:ceilTex, bumpMap:ceilBump, bumpScale:0.015,
-    shininess:8, specular:0x1e1a0e}));
-ceil.rotation.x = Math.PI/2; ceil.position.y = H; ceil.receiveShadow = true; scene.add(ceil);
-
-wallTex.repeat.set(1.6,1.6); wallBump.repeat.set(1.6,1.6);
-const pillarGeo = new THREE.BoxGeometry(1.7, H, 1.7);
-const pillarMat = new THREE.MeshPhongMaterial({map:wallTex, bumpMap:wallBump, bumpScale:0.012,
-  shininess:4, specular:0x141008});
-const baseMat = new THREE.MeshPhongMaterial({color:0x2a2113, shininess:14, specular:0x2a2416});
-const baseGeo = new THREE.BoxGeometry(1.78, 0.15, 1.78);
-function cellHash(i,j){ const s = Math.sin(i*127.1 + j*311.7)*43758.5453; return s - Math.floor(s); }
-const pillars = [];
-for(let i=-RANGE;i<=RANGE;i++) for(let j=-RANGE;j<=RANGE;j++){
-  const m = new THREE.Mesh(pillarGeo, pillarMat);
-  m.userData = {i,j}; m.position.y = H/2;
-  m.castShadow = m.receiveShadow = !COARSE;
-  const bb = new THREE.Mesh(baseGeo, baseMat); // skirting board
-  bb.position.y = -H/2 + 0.075; m.add(bb);
-  world.add(m); pillars.push(m);
-}
-// fluorescent fixtures — dark housings; most tubes are dead, survivors buzz dimly
-const lightGeo = new THREE.PlaneGeometry(1.42, 0.52);
-const frameGeo = new THREE.BoxGeometry(1.58, 0.08, 0.68);
-const frameMat = new THREE.MeshPhongMaterial({color:0x1c160b, shininess:20, specular:0x2b2515});
-const lights = [];
-for(let i=-RANGE;i<=RANGE;i++) for(let j=-RANGE;j<=RANGE;j++){
-  const g2 = new THREE.Group(); g2.position.y = H - 0.045;
-  const fr = new THREE.Mesh(frameGeo, frameMat); g2.add(fr);
-  const mat = new THREE.MeshBasicMaterial({color:0x000000});
-  const p = new THREE.Mesh(lightGeo, mat);
-  p.rotation.x = Math.PI/2; p.position.y = -0.05; g2.add(p);
-  world.add(g2);
-  lights.push({g:g2, mat, userData:{i, j, phase:Math.random()*10}});
-}
 
 // dust motes drifting through the beam
 const dustN = 260, dustPos = new Float32Array(dustN*3), dustVel = [];
@@ -139,43 +99,9 @@ const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
   depthWrite:false, blending:THREE.AdditiveBlending}));
 scene.add(dust);
 
-/* --- world placement (2D periodic wrap → free roaming) --- */
-let px = 3.5, pz = 3.5; // start in an open cell corner
-function pillarExists(gi,gj){ return cellHash(gi,gj) >= 0.28; }
-function placeWorld(){
-  const ci = Math.round(px/S), cj = Math.round(pz/S);
-  for(const p of pillars){
-    const gi = p.userData.i + ci, gj = p.userData.j + cj;
-    p.visible = pillarExists(gi,gj);
-    if(!p.visible) continue;
-    const w = 1.2 + cellHash(gi+11,gj+7)*2.6;
-    const d = 1.2 + cellHash(gi+5,gj+13)*2.6;
-    p.scale.set(w/1.7, 1, d/1.7);
-    p.position.x = gi*S + (cellHash(gi+2,gj+9)-0.5)*2.2 - px;
-    p.position.z = gj*S + (cellHash(gi+8,gj+3)-0.5)*2.2 - pz;
-  }
-  for(const l of lights){
-    const gi = l.userData.i + ci, gj = l.userData.j + cj;
-    l.g.position.x = gi*S + S/2 - px;
-    l.g.position.z = gj*S + S/2 - pz;
-    l.userData.alive = cellHash(gi*3+7, gj*5+1) < 0.16; // few survivors
-    l.userData.gi = gi; l.userData.gj = gj;
-  }
-  // floor/ceiling jump in whole-tile steps so the pattern stays world-fixed
-  const tile = 120/24;
-  floor.position.x = ceil.position.x = Math.round(px/tile)*tile - px;
-  floor.position.z = ceil.position.z = Math.round(pz/tile)*tile - pz;
-}
-// approximate pillar footprint test for steering
-function blockedAt(wx, wz){
-  const gi = Math.round(wx/S), gj = Math.round(wz/S);
-  if(!pillarExists(gi,gj)) return false;
-  const cx = gi*S + (cellHash(gi+2,gj+9)-0.5)*2.2;
-  const cz = gj*S + (cellHash(gi+8,gj+3)-0.5)*2.2;
-  const hw = (1.2 + cellHash(gi+11,gj+7)*2.6)/2 + 0.55;
-  const hd = (1.2 + cellHash(gi+5,gj+13)*2.6)/2 + 0.55;
-  return Math.abs(wx-cx) < hw && Math.abs(wz-cz) < hd;
-}
+/* --- where you are in the endless plan --- */
+let px = 3.5, pz = 3.5;
+{ const st = openCellNear(px, pz); px = st.x; pz = st.z; }
 
 /* --- the walker: someone searching for a way out --- */
 let heading = 0, headTarget = 0, sweep = 0, sweepDir = 1;
@@ -201,22 +127,8 @@ function setTorch(on){
 torchBtn.addEventListener("click", ()=> setTorch(!torchOn));
 addEventListener("keydown", e=>{ if(e.key==="f"||e.key==="F") setTorch(!torchOn); });
 
-/* --- ambient fluorescent behaviour --- */
+/* --- torch battery-stutter flash --- */
 const flickEl = document.getElementById("flick");
-function fluorescents(t){
-  for(const l of lights){
-    const d = l.userData;
-    let b;
-    if(!d.alive){ b = 0.015; }
-    else {
-      b = 0.16 + Math.sin(t*23 + d.phase)*0.05;               // sick dim buzz
-      const surge = cellHash(d.gi + (t*0.11|0), d.gj);          // rare far surge
-      if(surge > 0.985) b = 0.75;
-      if(!reduceMotion && Math.random() < 0.002) b *= 0.1;      // stutter
-    }
-    l.mat.color.setRGB(b, b*0.94, b*0.72);
-  }
-}
 
 /* --- noclip fall --- */
 let falling = 0;
@@ -277,7 +189,7 @@ function loop(now){
     } else {
       sweep += (0 - sweep)*Math.min(1, dt*3);
     }
-    // steer around pillars ahead
+    // steer around walls ahead
     const probe = 2.0;
     const fx = px - Math.sin(heading)*probe, fz = pz - Math.cos(heading)*probe;
     if(blockedAt(fx,fz)){
@@ -367,8 +279,7 @@ function loop(now){
     dust.geometry.attributes.position.needsUpdate = true;
   }
 
-  placeWorld();
-  fluorescents(t);
+  level.update(px, pz, t, reduceMotion);
   renderer.render(scene, camera);
 }
 __rafId = requestAnimationFrame(loop);
@@ -378,6 +289,7 @@ let gameMode = false, gYaw = 0, gPitch = 0, gBattery = 100, gStart = 0;
 let breath = 0, breathPhase = 0;
 let stamina = 100, exhausted = false, fear = 0, heartPhase = 0;
 let calm = 0, scareT = 8, paused = false, runBats = 0, runAlmonds = 0, entWalk = 0;
+let entAggro = false, entScreamT = 0;
 const keys = {};
 let exitW = {x:0, z:0}, entW = {x:0, z:0}, bats = [];
 const isTouch = matchMedia("(pointer:coarse)").matches;
@@ -394,18 +306,6 @@ const gEndSub = document.getElementById("gEndSub");
 const noiseEl = document.getElementById("noise");
 
 function normA(a){ return ((a + Math.PI) % (Math.PI*2) + Math.PI*2) % (Math.PI*2) - Math.PI; }
-function openCellNear(wx, wz){
-  const gi0 = Math.round(wx/S), gj0 = Math.round(wz/S);
-  for(let r=0; r<9; r++){
-    const steps = Math.max(1, r*8);
-    for(let a=0; a<steps; a++){
-      const th = a/steps * Math.PI*2;
-      const gi = gi0 + Math.round(Math.cos(th)*r), gj = gj0 + Math.round(Math.sin(th)*r);
-      if(!pillarExists(gi, gj)) return {x: gi*S, z: gj*S};
-    }
-  }
-  return {x: gi0*S, z: gj0*S};
-}
 
 /* --- exit door --- */
 const exitG = new THREE.Group();
@@ -572,12 +472,13 @@ function startGame(){
   setTorch(true);
   if(!audio.AC){ audio.buildHum(); } audio.setHum(true); audio.buildGameAudio(); audio.buildBreathing(); audio.buildHeart();
   breathPhase = 0; heartPhase = 0; stamina = 100; exhausted = false; fear = 0; calm = 0; scareT = 8;
-  runBats = 0; runAlmonds = 0; setPausedState(false);
+  runBats = 0; runAlmonds = 0; entAggro = false; entScreamT = 0; setPausedState(false);
+  document.body.classList.remove("show-cursor");
   document.body.classList.add("in-game");
   gameHud.classList.add("on"); gameEnd.classList.remove("on");
   gHint.textContent = isTouch
-    ? "LEFT: MOVE · RIGHT: LOOK · FOLLOW THE WHINE · LIGHT FREEZES IT"
-    : "WASD MOVE · MOUSE / HOLD+DRAG TO LOOK · SHIFT RUN · F TORCH · FOLLOW THE WHINE · LIGHT FREEZES IT";
+    ? "LEFT: MOVE · RIGHT: LOOK · FOLLOW THE WHINE · IF IT SCREAMS, RUN"
+    : "WASD MOVE · MOUSE / HOLD+DRAG TO LOOK · SHIFT RUN · F TORCH · FOLLOW THE WHINE · IF IT SCREAMS, RUN";
   gHint.style.opacity = 1;
   setTimeout(()=>{ gHint.style.opacity = 0; }, 9000);
   tryPointerLock();
@@ -615,9 +516,11 @@ function endGame(kind){
     gEndSub.textContent = `SIGNAL LOST AFTER ${mm}:${ss} · ${stats}`;
   }
   gameEnd.classList.add("on");
+  document.body.classList.add("show-cursor");   // the end screen has buttons — you need to see the cursor
 }
 function exitToSite(){
   gameEnd.classList.remove("on");
+  document.body.classList.remove("show-cursor");
   exitG.visible = entG.visible = false;
   for(const b of bats) b.m.visible = false;
   for(const a of almonds) a.m.visible = false;
@@ -633,6 +536,7 @@ document.getElementById("gQuit").addEventListener("click", ()=> endGame("quit"))
 function setPausedState(v){
   paused = v;
   if(v && document.pointerLockElement) document.exitPointerLock();
+  document.body.classList.toggle("show-cursor", v);   // the pause overlay has buttons too
   dispatchEvent(new CustomEvent("backrooms:pausestate", { detail: { paused: v } }));
 }
 addEventListener("backrooms:resume", ()=> setPausedState(false));
@@ -719,27 +623,61 @@ function updateGame(dt, t){
   exitLight.intensity = 0.8 + Math.sin(t*3)*0.15;
   if(exD < 1.6){ endGame("win"); return; }
 
-  /* entity */
+  /* entity — it stalks unseen, then spots you, screams, and runs you down */
   let edx = px - entW.x, edz = pz - entW.z;
   let ed = Math.hypot(edx, edz) || 0.001;
   const dirToEnt = Math.atan2(-(entW.x - px), -(entW.z - pz));
   const lookOff = Math.abs(normA(dirToEnt - gYaw));
-  const lit = torchOn && torchI > 1 && ed < 15 && lookOff < 0.3;
-  const eSpd = lit ? 0.12 : (ed > 26 ? 1.15 : 1.75) * DIFFICULTIES[settings.get().difficulty].ent;
-  const ex2 = entW.x + (edx/ed)*eSpd*dt, ez2 = entW.z + (edz/ed)*eSpd*dt;
-  if(!blockedAt(ex2, entW.z)) entW.x = ex2;
-  if(!blockedAt(entW.x, ez2)) entW.z = ez2;
-  if(ed > 78){ // lost you — flank and return
+  const beamOnIt = torchOn && torchI > 1 && ed < 22 && lookOff < 0.35;   // your light is on it
+  const diff = DIFFICULTIES[settings.get().difficulty].ent;
+
+  // detection — it notices you by proximity, by your torch, or by the noise of a sprint
+  if(!entAggro){
+    if(ed < 26 || beamOnIt || (run && ed < 40)){
+      entAggro = true;
+      audio.scream();                                  // it has seen you
+      fear = Math.min(100, fear + 35);
+      entScreamT = 6 + Math.random() * 4;
+    }
+  } else if(ed > 70){
+    entAggro = false;                                  // it lost you again
+  }
+
+  // walking is 2.1 and sprinting 3.5 — once it hunts, you cannot simply walk away
+  let eSpd = entAggro ? 2.4 * diff : 0.75;
+  if(beamOnIt) eSpd *= 0.55;                           // the beam staggers it, but it keeps coming
+  const lit = beamOnIt;
+
+  // steer around walls: head for the player, but if something is in the way,
+  // fan out to either side until a lane is clear. Without this it walks into a
+  // pillar and stops dead.
+  const baseA = Math.atan2(edx, edz);
+  for(const off of [0, 0.45, -0.45, 0.95, -0.95, 1.5, -1.5, 2.2, -2.2]){
+    const a = baseA + off, sx = Math.sin(a), sz = Math.cos(a);
+    if(blockedAt(entW.x + sx*0.9, entW.z + sz*0.9)) continue;   // look ahead before committing
+    entW.x += sx*eSpd*dt; entW.z += sz*eSpd*dt;
+    break;
+  }
+
+  if(entAggro){                                        // it keeps screaming while it is on you
+    entScreamT -= dt;
+    if(entScreamT <= 0 && ed < 14){
+      audio.scream(); entScreamT = 5 + Math.random() * 5;
+      fear = Math.min(100, fear + 15);
+    }
+  }
+
+  if(ed > 90){ // hopelessly lost — flank and return
     const ra = Math.random()*Math.PI*2;
-    const rc = openCellNear(px - Math.sin(ra)*42, pz - Math.cos(ra)*42);
+    const rc = openCellNear(px - Math.sin(ra)*46, pz - Math.cos(ra)*46);
     entW = {x:rc.x, z:rc.z};
   }
   /* gait — the rigged human plays real clips; the fallback swings its joints */
   if(entRigged){
     entMixer.update(dt);
-    fadeAction(entActions.idle, lit ? 1 : 0, dt);                  // frozen in the beam
-    fadeAction(entActions.walk, (!lit && ed >= 26) ? 1 : 0, dt);   // stalking from a distance
-    fadeAction(entActions.run,  (!lit && ed <  26) ? 1 : 0, dt);   // closing on you
+    fadeAction(entActions.idle, 0, dt);                            // it never just stands there
+    fadeAction(entActions.walk, entAggro ? 0 : 1, dt);             // stalking, unaware
+    fadeAction(entActions.run,  entAggro ? 1 : 0, dt);             // hunting you down
     entG.position.set(entW.x - px, lit ? Math.sin(t*40)*0.006 : 0, entW.z - pz);
     entG.rotation.y = Math.atan2(px - entW.x, pz - entW.z);
     if(entHeadBone){                                               // keep the glow on its head
@@ -835,8 +773,7 @@ function applyGraphics(){
     }});
   }
   torch.castShadow = sh;
-  for(const p of pillars){ p.castShadow = p.receiveShadow = sh; }
-  floor.receiveShadow = ceil.receiveShadow = sh;
+  level.setShadows(sh);
   entG.traverse(o=>{ if(o.isMesh) o.castShadow = sh && !o.userData.glow; });
   exitG.traverse(o=>{ if(o.isMesh && o.material === jambMat) o.castShadow = sh; });
   if(torch.shadow.mapSize.width !== q.shadowMap){
